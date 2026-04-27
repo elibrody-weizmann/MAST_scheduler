@@ -34,6 +34,11 @@
           </dl>
           <details>
             <summary>Configuration</summary>
+            <div class="json-toolbar">
+              <button id="copy-status-config" type="button" class="secondary copy-json-button">
+                Copy JSON
+              </button>
+            </div>
             <pre id="status-config">{}</pre>
           </details>
         </section>
@@ -106,9 +111,47 @@
           </label>
 
           <label class="field">
-            <span>Operational units</span>
+            <span>Mock operational units</span>
             <textarea id="operational-units" rows="3" placeholder="mast01, mast02"></textarea>
+            <div class="unit-presets">
+              <select id="operational-units-preset">
+                <option value="">Select preset size</option>
+                <option value="mast01-03">mast01-03</option>
+                <option value="mast01-10">mast01-10</option>
+                <option value="mast01-20">mast01-20</option>
+              </select>
+              <button id="apply-operational-units-preset" type="button" class="secondary">
+                Apply preset
+              </button>
+            </div>
+            <small>These units are treated as currently available for scheduling runs.</small>
           </label>
+
+          <div class="field field-wide mock-panel">
+            <span>Environmental conditions (input only)</span>
+            <div class="mock-grid env-grid">
+              <label class="field">
+                <span>Humidity (%)</span>
+                <input id="environment-humidity" type="number" min="0" max="100" step="0.1" />
+              </label>
+              <label class="field">
+                <span>Temperature (C)</span>
+                <input id="environment-temperature" type="number" step="0.1" />
+              </label>
+              <label class="field">
+                <span>Wind speed (m/s)</span>
+                <input id="environment-wind-speed" type="number" min="0" step="0.1" />
+              </label>
+              <label class="field">
+                <span>Cloud cover (%)</span>
+                <input id="environment-cloud-cover" type="number" min="0" max="100" step="0.1" />
+              </label>
+            </div>
+            <small>
+              Context is included in API payloads and echoed in responses, but does not affect
+              feasibility filtering yet.
+            </small>
+          </div>
 
           <label class="field">
             <span>Immediate time</span>
@@ -135,6 +178,9 @@
           <button id="run-immediate" type="button">Run immediate batch</button>
           <button id="run-predict" type="button">Predict night</button>
         </div>
+        <div id="environment-summary" class="empty-state">
+          No environmental conditions configured for this run.
+        </div>
       </section>
 
       <p id="error-message" class="error-message" role="alert" hidden></p>
@@ -151,6 +197,11 @@
           <div id="immediate-summary" class="empty-state">Run the immediate scheduler to see a batch.</div>
           <details>
             <summary>Raw response</summary>
+            <div class="json-toolbar">
+              <button id="copy-immediate-json" type="button" class="secondary copy-json-button">
+                Copy JSON
+              </button>
+            </div>
             <pre id="immediate-json">{}</pre>
           </details>
         </article>
@@ -167,6 +218,11 @@
           <div id="prediction-list" class="prediction-list"></div>
           <details>
             <summary>Raw response</summary>
+            <div class="json-toolbar">
+              <button id="copy-prediction-json" type="button" class="secondary copy-json-button">
+                Copy JSON
+              </button>
+            </div>
             <pre id="prediction-json">{}</pre>
           </details>
         </article>

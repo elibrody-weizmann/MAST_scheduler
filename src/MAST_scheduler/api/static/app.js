@@ -10,11 +10,18 @@ const API_PATHS = {
 const EMPTY_JSON = "{}";
 const SECONDS_PER_MINUTE = 60;
 const PREDICTION_BATCH_LIMIT = 200;
+const UNIT_NAME_PAD_LENGTH = 2;
+const UNIT_PRESET_RANGES = {
+  "mast01-03": [1, 3],
+  "mast01-10": [1, 10],
+  "mast01-20": [1, 20],
+};
 
 const elements = {
   statusHealth: document.querySelector("#status-health"),
   statusVersion: document.querySelector("#status-version"),
   statusConfig: document.querySelector("#status-config"),
+  copyStatusConfig: document.querySelector("#copy-status-config"),
   refreshStatus: document.querySelector("#refresh-status"),
   planPaths: document.querySelector("#plan-paths"),
   mockCount: document.querySelector("#mock-count"),
@@ -25,6 +32,13 @@ const elements = {
   mockSummary: document.querySelector("#mock-summary"),
   siteName: document.querySelector("#site-name"),
   operationalUnits: document.querySelector("#operational-units"),
+  operationalUnitsPreset: document.querySelector("#operational-units-preset"),
+  applyOperationalUnitsPreset: document.querySelector("#apply-operational-units-preset"),
+  environmentHumidity: document.querySelector("#environment-humidity"),
+  environmentTemperature: document.querySelector("#environment-temperature"),
+  environmentWindSpeed: document.querySelector("#environment-wind-speed"),
+  environmentCloudCover: document.querySelector("#environment-cloud-cover"),
+  environmentSummary: document.querySelector("#environment-summary"),
   immediateNow: document.querySelector("#immediate-now"),
   predictionStart: document.querySelector("#prediction-start"),
   completedTonight: document.querySelector("#completed-tonight"),
@@ -35,10 +49,12 @@ const elements = {
   immediateState: document.querySelector("#immediate-state"),
   immediateSummary: document.querySelector("#immediate-summary"),
   immediateJson: document.querySelector("#immediate-json"),
+  copyImmediateJson: document.querySelector("#copy-immediate-json"),
   predictionState: document.querySelector("#prediction-state"),
   predictionSummary: document.querySelector("#prediction-summary"),
   predictionList: document.querySelector("#prediction-list"),
   predictionJson: document.querySelector("#prediction-json"),
+  copyPredictionJson: document.querySelector("#copy-prediction-json"),
   traceState: document.querySelector("#trace-state"),
   traceTimeline: document.querySelector("#trace-timeline"),
   traceDetails: document.querySelector("#trace-details"),
@@ -48,12 +64,30 @@ const state = {
   generatedPlans: [],
   generatedSummary: null,
 };
+let selectedTraceItem = null;
 
 function splitList(value) {
   return value
     .split(/[\n,]+/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function buildUnitRange(start, end) {
+  return Array.from({ length: end - start + 1 }, (_, offset) => {
+    const unitNumber = String(start + offset).padStart(UNIT_NAME_PAD_LENGTH, "0");
+    return `mast${unitNumber}`;
+  });
+}
+
+function applyOperationalUnitsPreset() {
+  const presetValue = elements.operationalUnitsPreset.value;
+  const range = UNIT_PRESET_RANGES[presetValue];
+  if (!range) {
+    return;
+  }
+  const [start, end] = range;
+  elements.operationalUnits.value = buildUnitRange(start, end).join(", ");
 }
 
 function formatJson(value) {
@@ -68,6 +102,58 @@ function setError(message) {
 function setState(element, label, status = "") {
   element.textContent = label;
   element.className = `pill ${status}`.trim();
+}
+
+async function writeClipboardText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const hiddenField = document.createElement("textarea");
+  hiddenField.value = text;
+  hiddenField.setAttribute("readonly", "true");
+  hiddenField.style.position = "absolute";
+  hiddenField.style.left = "-9999px";
+  document.body.append(hiddenField);
+  hiddenField.select();
+  document.execCommand("copy");
+  hiddenField.remove();
+}
+
+function createCopyButton(getText) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary copy-json-button";
+  button.textContent = "Copy JSON";
+  button.addEventListener("click", async () => {
+    try {
+      await writeClipboardText(getText());
+      button.textContent = "Copied";
+      setTimeout(() => {
+        button.textContent = "Copy JSON";
+      }, 1200);
+    } catch (error) {
+      setError(error.message || "Failed to copy JSON.");
+    }
+  });
+  return button;
+}
+
+function setupCopyButton(button, getText) {
+  if (!button) {
+    return;
+  }
+  button.addEventListener("click", async () => {
+    try {
+      await writeClipboardText(getText());
+      button.textContent = "Copied";
+      setTimeout(() => {
+        button.textContent = "Copy JSON";
+      }, 1200);
+    } catch (error) {
+      setError(error.message || "Failed to copy JSON.");
+    }
+  });
 }
 
 function parseJsonField(field, fallback) {
@@ -107,12 +193,48 @@ async function requestJson(path, options = {}) {
 }
 
 function buildBasePayload() {
+  const environment = buildEnvironmentPayload();
   return {
     plan_paths: splitList(elements.planPaths.value),
     site_name: elements.siteName.value,
     operational_units: splitList(elements.operationalUnits.value),
+    environment,
     include_trace: elements.includeTrace.checked,
   };
+}
+
+function parseOptionalNumber(value) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return Number(trimmed);
+}
+
+function buildEnvironmentPayload() {
+  const environment = {
+    humidity_percent: parseOptionalNumber(elements.environmentHumidity.value),
+    temperature_c: parseOptionalNumber(elements.environmentTemperature.value),
+    wind_speed_mps: parseOptionalNumber(elements.environmentWindSpeed.value),
+    cloud_cover_percent: parseOptionalNumber(elements.environmentCloudCover.value),
+  };
+  const hasAnyValue = Object.values(environment).some((value) => value !== null);
+  return hasAnyValue ? environment : null;
+}
+
+function renderEnvironmentSummary(environment) {
+  if (!environment) {
+    elements.environmentSummary.className = "empty-state";
+    elements.environmentSummary.textContent = "No environmental conditions configured for this run.";
+    return;
+  }
+  elements.environmentSummary.className = "";
+  renderSummary(elements.environmentSummary, [
+    ["Humidity (%)", environment.humidity_percent ?? "-"],
+    ["Temperature (C)", environment.temperature_c ?? "-"],
+    ["Wind speed (m/s)", environment.wind_speed_mps ?? "-"],
+    ["Cloud cover (%)", environment.cloud_cover_percent ?? "-"],
+  ]);
 }
 
 function useInlinePlans() {
@@ -160,6 +282,16 @@ function formatDuration(seconds) {
   }
   const minutes = Math.round(Number(seconds) / SECONDS_PER_MINUTE);
   return `${minutes} min`;
+}
+
+function formatMinutesSeconds(seconds) {
+  const totalSeconds = Math.max(0, Math.round(Number(seconds ?? 0)));
+  const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
+  const remainingSeconds = totalSeconds % SECONDS_PER_MINUTE;
+  if (minutes <= 0) {
+    return `${remainingSeconds}s`;
+  }
+  return `${minutes}m ${remainingSeconds}s`;
 }
 
 function renderImmediate(data) {
@@ -233,22 +365,149 @@ function renderPrediction(data) {
 }
 
 function resetTrace() {
+  selectedTraceItem = null;
   setState(elements.traceState, "Not requested", "");
   elements.traceTimeline.className = "trace-timeline empty-state";
   elements.traceTimeline.textContent =
     "Enable trace and run immediate or prediction to inspect scheduling decisions.";
   elements.traceDetails.className = "trace-details empty-state";
+  elements.traceDetails.style.marginTop = "0px";
   elements.traceDetails.textContent = "Click a trace item to inspect rationale details.";
 }
 
-function showTraceDetails(title, payload) {
+function summarizeRationaleGroups(entries) {
+  const grouped = {};
+  for (const entry of entries) {
+    const key = `${entry.kind}::${entry.code}::${entry.message}`;
+    if (!grouped[key]) {
+      grouped[key] = {
+        kind: entry.kind,
+        code: entry.code,
+        message: entry.message,
+        count: 0,
+        planIds: new Set(),
+      };
+    }
+    grouped[key].count += 1;
+    for (const planId of entry.planIds) {
+      grouped[key].planIds.add(planId);
+    }
+  }
+  return Object.values(grouped)
+    .map((group) => ({
+      ...group,
+      planIds: Array.from(group.planIds),
+    }))
+    .sort((a, b) => b.planIds.length - a.planIds.length || b.count - a.count);
+}
+
+function collectRationaleEntries(payload) {
+  const entries = [];
+  if (payload && Array.isArray(payload.kept_plan_ids) && payload.kept_plan_ids.length > 0) {
+    entries.push({
+      kind: "kept",
+      code: "passed_stage",
+      message: "Plan passed this stage",
+      planIds: payload.kept_plan_ids,
+    });
+  }
+  const droppedCollections = [
+    payload?.dropped,
+    payload?.excluded,
+    payload?.dropped_by_exposure_cap,
+  ].filter(Array.isArray);
+  for (const droppedList of droppedCollections) {
+    for (const droppedItem of droppedList) {
+      const planId = droppedItem?.plan_id ?? "";
+      const rationales = Array.isArray(droppedItem?.rationales) ? droppedItem.rationales : [];
+      if (!rationales.length && planId) {
+        entries.push({
+          kind: "dropped",
+          code: "dropped_without_rationale",
+          message: "Dropped without explicit rationale",
+          planIds: [planId],
+        });
+        continue;
+      }
+      for (const rationale of rationales) {
+        entries.push({
+          kind: "dropped",
+          code: rationale?.code ?? "unknown",
+          message: rationale?.message ?? "No message",
+          planIds: planId ? [planId] : [],
+        });
+      }
+    }
+  }
+  return entries;
+}
+
+function buildRationalePanel(payload) {
+  const panel = document.createElement("section");
+  panel.className = "trace-details-panel trace-details-panel-rationales";
+  const heading = document.createElement("h3");
+  heading.textContent = "Rationales (grouped)";
+  panel.append(heading);
+
+  const entries = collectRationaleEntries(payload);
+  if (!entries.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "No keep/drop rationale data for this trace item.";
+    panel.append(empty);
+    return panel;
+  }
+
+  for (const group of summarizeRationaleGroups(entries)) {
+    const item = document.createElement("article");
+    item.className = "rationale-group";
+    const title = document.createElement("h4");
+    title.textContent = `${group.kind === "kept" ? "Kept" : "Dropped"} - ${group.code}`;
+    const message = document.createElement("p");
+    message.textContent = group.message;
+    const meta = document.createElement("p");
+    meta.className = "rationale-meta";
+    meta.textContent = `Plans: ${group.planIds.length} | Occurrences: ${group.count}`;
+    item.append(title, message, meta);
+    panel.append(item);
+  }
+
+  return panel;
+}
+
+function alignTraceDetailsToSelection(target) {
+  const timelineRect = elements.traceTimeline.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const detailsHeight = elements.traceDetails.offsetHeight;
+  const maxOffset = Math.max(0, elements.traceTimeline.offsetHeight - detailsHeight);
+  const desiredOffset = targetRect.top - timelineRect.top;
+  const clampedOffset = Math.max(0, Math.min(desiredOffset, maxOffset));
+  elements.traceDetails.style.marginTop = `${Math.round(clampedOffset)}px`;
+}
+
+function selectTraceItem(target, title, payload) {
+  if (selectedTraceItem) {
+    selectedTraceItem.classList.remove("is-selected");
+  }
+  selectedTraceItem = target;
+  selectedTraceItem.classList.add("is-selected");
+
   elements.traceDetails.className = "trace-details";
   elements.traceDetails.replaceChildren();
-  const heading = document.createElement("h3");
-  heading.textContent = title;
+
+  const payloadPanel = document.createElement("section");
+  payloadPanel.className = "trace-details-panel trace-details-panel-raw";
+  const payloadHeading = document.createElement("h3");
+  payloadHeading.textContent = title;
+  const toolbar = document.createElement("div");
+  toolbar.className = "json-toolbar";
+  toolbar.append(createCopyButton(() => pre.textContent || EMPTY_JSON));
   const pre = document.createElement("pre");
   pre.textContent = formatJson(payload);
-  elements.traceDetails.append(heading, pre);
+  payloadPanel.append(payloadHeading, toolbar, pre);
+
+  elements.traceDetails.append(payloadPanel, buildRationalePanel(payload));
+  alignTraceDetailsToSelection(target);
 }
 
 function makeTraceChips(items) {
@@ -263,24 +522,12 @@ function makeTraceChips(items) {
   return chips;
 }
 
-function buildPlanListDetails(summary, ids, title) {
-  const details = document.createElement("details");
-  details.className = "trace-plan-details";
-  const summaryElement = document.createElement("summary");
-  summaryElement.textContent = `${summary} (${ids.length})`;
-  details.append(summaryElement);
-  const pre = document.createElement("pre");
-  pre.textContent = formatJson({ title, plan_ids: ids });
-  details.append(pre);
-  return details;
-}
-
 function traceButton(label, payload, className = "") {
   const button = document.createElement("button");
   button.type = "button";
   button.className = `trace-item ${className}`.trim();
   button.textContent = label;
-  button.addEventListener("click", () => showTraceDetails(label, payload));
+  button.addEventListener("click", () => selectTraceItem(button, label, payload));
   return button;
 }
 
@@ -295,23 +542,33 @@ function renderImmediateTrace(trace) {
     const kept = (stage.kept_plan_ids ?? []).length;
     const stageCard = document.createElement("article");
     stageCard.className = "trace-stage-card";
-    stageCard.append(
-      traceButton(
-        stage.label,
-        stage,
-        dropped > 0 ? "stage-dropped" : "stage-kept",
-      ),
+    const stageHeader = document.createElement("div");
+    stageHeader.className = "trace-stage-header";
+    stageHeader.role = "button";
+    stageHeader.tabIndex = 0;
+    stageHeader.addEventListener("click", () => selectTraceItem(stageHeader, stage.label, stage));
+    stageHeader.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectTraceItem(stageHeader, stage.label, stage);
+      }
+    });
+
+    const stageLabel = document.createElement("span");
+    stageLabel.className = `trace-item trace-stage-label ${
+      dropped > 0 ? "stage-dropped" : "stage-kept"
+    }`.trim();
+    stageLabel.textContent = stage.label;
+    stageHeader.append(
+      stageLabel,
       makeTraceChips([
         { label: "Input", value: (stage.input_plan_ids ?? []).length, className: "chip-input" },
         { label: "Kept", value: kept, className: "chip-kept" },
         { label: "Dropped", value: dropped, className: dropped ? "chip-dropped" : "chip-neutral" },
       ]),
-      buildPlanListDetails("Kept plan IDs", stage.kept_plan_ids ?? [], "kept_plan_ids"),
-      buildPlanListDetails(
-        "Dropped plan IDs",
-        (stage.dropped ?? []).map((entry) => entry.plan_id),
-        "dropped_plan_ids",
-      ),
+    );
+    stageCard.append(
+      stageHeader,
     );
     section.append(stageCard);
   }
@@ -384,7 +641,7 @@ function renderPredictedTrace(trace) {
         },
         {
           label: "Batch duration",
-          value: `${Math.round(Number(iteration.duration_seconds ?? 0))}s`,
+          value: formatMinutesSeconds(iteration.duration_seconds),
           className: "chip-kept",
         },
         {
@@ -410,6 +667,7 @@ function renderTrace(trace, modeLabel) {
   elements.traceTimeline.className = "trace-timeline";
   elements.traceTimeline.replaceChildren();
   elements.traceDetails.className = "trace-details empty-state";
+  elements.traceDetails.style.marginTop = "0px";
   elements.traceDetails.textContent = "Click a trace item to inspect rationale details.";
 
   if (trace.iterations) {
@@ -458,6 +716,7 @@ async function runImmediate() {
       ...buildBasePayload(),
       completed_tonight: parseJsonField(elements.completedTonight, {}),
     };
+    renderEnvironmentSummary(payload.environment);
     const now = getDateTimeValue(elements.immediateNow);
     if (now) {
       payload.now = now;
@@ -497,6 +756,7 @@ async function runPredict() {
       ...buildBasePayload(),
       start_datetime: startDatetime,
     };
+    renderEnvironmentSummary(payload.environment);
     const endpoint = useInlinePlans() ? API_PATHS.predictInline : API_PATHS.predict;
     if (useInlinePlans()) {
       delete payload.plan_paths;
@@ -548,6 +808,15 @@ elements.refreshStatus.addEventListener("click", refreshStatus);
 elements.runImmediate.addEventListener("click", runImmediate);
 elements.runPredict.addEventListener("click", runPredict);
 elements.generateMockPlans.addEventListener("click", generateMockPlans);
+elements.applyOperationalUnitsPreset.addEventListener("click", applyOperationalUnitsPreset);
+setupCopyButton(elements.copyStatusConfig, () => elements.statusConfig.textContent || EMPTY_JSON);
+setupCopyButton(elements.copyImmediateJson, () => elements.immediateJson.textContent || EMPTY_JSON);
+setupCopyButton(elements.copyPredictionJson, () => elements.predictionJson.textContent || EMPTY_JSON);
+window.addEventListener("resize", () => {
+  if (selectedTraceItem && !elements.traceDetails.classList.contains("empty-state")) {
+    alignTraceDetailsToSelection(selectedTraceItem);
+  }
+});
 
 setDefaultPredictionStart();
 elements.completedTonight.value = EMPTY_JSON;

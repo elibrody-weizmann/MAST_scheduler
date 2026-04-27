@@ -97,12 +97,14 @@ def immediate(req: ImmediateRequest, request: Request) -> ImmediateResponse:
             batch=None,
             feasible_plan_count=0,
             message="No feasible plans",
+            environment=req.environment,
             trace=trace,
         )
 
     return ImmediateResponse(
         batch=batch.model_dump(mode="json", exclude={"plans"}),
         feasible_plan_count=len(batch.plans),
+        environment=req.environment,
         trace=trace,
     )
 
@@ -136,12 +138,14 @@ def immediate_inline(req: InlineImmediateRequest, request: Request) -> Immediate
             batch=None,
             feasible_plan_count=0,
             message="No feasible plans",
+            environment=req.environment,
             trace=trace,
         )
 
     return ImmediateResponse(
         batch=batch.model_dump(mode="json", exclude={"plans"}),
         feasible_plan_count=len(batch.plans),
+        environment=req.environment,
         trace=trace,
     )
 
@@ -180,6 +184,7 @@ def predict(req: PredictRequest, request: Request) -> PredictResponse:
         predicted_batches=batches,
         night_start=night_start,
         night_end=night_end,
+        environment=req.environment,
         trace=trace,
     )
 
@@ -218,6 +223,7 @@ def predict_inline(req: InlinePredictRequest, request: Request) -> PredictRespon
         predicted_batches=batches,
         night_start=night_start,
         night_end=night_end,
+        environment=req.environment,
         trace=trace,
     )
 

@@ -75,6 +75,16 @@ summary {
   font-weight: 700;
 }
 
+.json-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0.5rem 0;
+}
+
+.copy-json-button {
+  padding: 0.35rem 0.65rem;
+}
+
 .page-shell {
   width: min(1180px, calc(100% - 2rem));
   margin: 0 auto;
@@ -168,6 +178,10 @@ small {
   gap: 1rem;
 }
 
+.form-grid {
+  align-items: start;
+}
+
 .field {
   display: grid;
   gap: 0.45rem;
@@ -176,6 +190,16 @@ small {
 .field span {
   color: var(--text);
   font-weight: 700;
+}
+
+.unit-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.unit-presets select {
+  flex: 1 1 12rem;
 }
 
 .field-wide {
@@ -227,6 +251,14 @@ textarea {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.8rem;
+}
+
+.env-grid {
+  margin-bottom: 0.6rem;
+}
+
+#environment-summary {
+  margin-top: 1rem;
 }
 
 .error-message {
@@ -316,6 +348,7 @@ textarea {
 }
 
 .trace-layout {
+  align-items: start;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(16rem, 28rem);
   gap: 1rem;
@@ -334,11 +367,30 @@ textarea {
 }
 
 .trace-stage-card {
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  border-radius: 0.65rem;
+  background: rgb(31 41 55 / 0.2);
   display: grid;
   gap: 0.55rem;
-  padding: 0.55rem;
+  padding: 0.45rem;
+}
+
+.trace-stage-header {
+  align-items: center;
+  border-radius: 0.55rem;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  padding: 0.4rem;
+}
+
+.trace-stage-header:hover {
+  background: rgb(15 23 42 / 0.35);
+}
+
+.trace-stage-header.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgb(56 189 248 / 0.45) inset;
 }
 
 .trace-iteration {
@@ -356,16 +408,26 @@ textarea {
 
 .trace-item {
   background: rgb(2 6 23 / 0.72);
-  border: 1px solid var(--border);
+  border: 1px solid rgb(51 65 85 / 0.55);
   border-radius: 0.65rem;
   color: var(--text);
   font-size: 0.9rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.45rem 0.65rem;
   text-align: left;
 }
 
 .trace-item:hover {
   background: rgb(15 23 42 / 0.88);
+}
+
+.trace-item.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgb(56 189 248 / 0.45) inset;
+}
+
+.trace-stage-label {
+  cursor: inherit;
+  pointer-events: none;
 }
 
 .trace-item.stage-dropped {
@@ -413,16 +475,65 @@ textarea {
 }
 
 .trace-details {
-  border: 1px solid var(--border);
+  border: 1px solid rgb(51 65 85 / 0.65);
   border-radius: 0.75rem;
   background: rgb(2 6 23 / 0.72);
-  max-height: 40rem;
-  overflow: auto;
+  display: grid;
+  gap: 0.85rem;
+  max-height: calc(100vh - 10rem);
+  overflow: hidden;
   padding: 0.85rem;
+  position: sticky;
+  top: 1rem;
 }
 
-.trace-details h3 {
+.trace-details-panel h3 {
   margin-top: 0;
+}
+
+.trace-details-panel pre {
+  margin-bottom: 0;
+}
+
+.trace-details-panel-raw {
+  border-radius: 0.55rem;
+  background: rgb(15 23 42 / 0.45);
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.6rem;
+}
+
+.trace-details-panel-raw pre {
+  margin: 0;
+  max-height: 16rem;
+  overflow: auto;
+}
+
+.trace-details-panel-rationales {
+  border-radius: 0.55rem;
+  background: rgb(15 23 42 / 0.45);
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0.6rem;
+}
+
+.rationale-group {
+  border-radius: 0.55rem;
+  background: rgb(2 6 23 / 0.55);
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+  padding: 0.55rem;
+}
+
+.rationale-group h4,
+.rationale-group p {
+  margin: 0;
+}
+
+.rationale-meta {
+  color: var(--muted);
+  font-size: 0.84rem;
 }
 
 @media (max-width: 820px) {

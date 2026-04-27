@@ -235,6 +235,37 @@ class TestAPI:
         assert data["batch"] is None
         assert data["feasible_plan_count"] == 0
 
+    def test_immediate_environment_is_echoed_without_behavior_change(self):
+        base_payload = {
+            "plan_paths": [],
+            "operational_units": ["mast01"],
+            "site_name": "ns",
+        }
+        environment = {
+            "humidity_percent": 62.5,
+            "temperature_c": 17.0,
+            "wind_speed_mps": 3.4,
+            "cloud_cover_percent": 45.0,
+        }
+
+        with TestClient(app) as client:
+            baseline = client.post("/scheduler/immediate", json=base_payload)
+            with_environment = client.post(
+                "/scheduler/immediate",
+                json={
+                    **base_payload,
+                    "environment": environment,
+                },
+            )
+
+        assert baseline.status_code == 200
+        assert with_environment.status_code == 200
+        baseline_data = baseline.json()
+        env_data = with_environment.json()
+        assert baseline_data["batch"] == env_data["batch"] is None
+        assert baseline_data["feasible_plan_count"] == env_data["feasible_plan_count"] == 0
+        assert env_data["environment"] == environment
+
     def test_immediate_unknown_site(self):
         with TestClient(app) as client:
             response = client.post(
@@ -296,6 +327,29 @@ class TestAPI:
         assert response.status_code == 200
         data = response.json()
         assert "predicted_batches" in data
+
+    def test_predict_inline_environment_is_echoed(self):
+        minimal_plan = load_plan("minimal").model_dump(mode="json")
+        environment = {
+            "humidity_percent": 55.0,
+            "temperature_c": 12.2,
+            "wind_speed_mps": 1.0,
+            "cloud_cover_percent": 15.0,
+        }
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/predict/inline",
+                json={
+                    "plans": [minimal_plan],
+                    "start_datetime": "2026-04-27T19:00:00Z",
+                    "site_name": "ns",
+                    "operational_units": ["mast01"],
+                    "environment": environment,
+                },
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["environment"] == environment
 
     def test_inline_requires_plans(self):
         with TestClient(app) as client:

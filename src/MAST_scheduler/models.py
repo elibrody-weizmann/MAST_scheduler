@@ -133,12 +133,20 @@ class PredictedBatch(BaseModel):
     allocated_units: list[str]
 
 
+class EnvironmentConditions(BaseModel):
+    humidity_percent: float | None = None
+    temperature_c: float | None = None
+    wind_speed_mps: float | None = None
+    cloud_cover_percent: float | None = None
+
+
 class ImmediateRequest(BaseModel):
     plan_paths: list[str] | None = None
     operational_units: list[str] = Field(default_factory=list)
     site_name: str = "ns"
     now: datetime | None = None
     completed_tonight: dict[str, int] = Field(default_factory=dict)
+    environment: EnvironmentConditions | None = None
     include_trace: bool = False
 
 
@@ -146,6 +154,7 @@ class ImmediateResponse(BaseModel):
     batch: dict | None
     feasible_plan_count: int
     message: str = ""
+    environment: EnvironmentConditions | None = None
     trace: ImmediateScheduleTrace | None = None
 
 
@@ -154,6 +163,7 @@ class PredictRequest(BaseModel):
     start_datetime: datetime
     site_name: str = "ns"
     operational_units: list[str] | None = None
+    environment: EnvironmentConditions | None = None
     include_trace: bool = False
 
 
@@ -172,6 +182,7 @@ class InlineImmediateRequest(InlinePlansMixin):
     site_name: str = "ns"
     now: datetime | None = None
     completed_tonight: dict[str, int] = Field(default_factory=dict)
+    environment: EnvironmentConditions | None = None
     include_trace: bool = False
 
 
@@ -179,6 +190,7 @@ class InlinePredictRequest(InlinePlansMixin):
     start_datetime: datetime
     site_name: str = "ns"
     operational_units: list[str] | None = None
+    environment: EnvironmentConditions | None = None
     include_trace: bool = False
 
 
@@ -237,6 +249,7 @@ class PredictResponse(BaseModel):
     predicted_batches: list[PredictedBatch]
     night_start: datetime | None
     night_end: datetime | None
+    environment: EnvironmentConditions | None = None
     trace: PredictedScheduleTrace | None = None
 
 
