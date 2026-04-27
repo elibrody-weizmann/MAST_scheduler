@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MAST Scheduler</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">MAST Scheduler</p>
+          <h1>Run and inspect scheduler decisions</h1>
+          <p class="lede">
+            Submit server-local plan paths, choose a site and active units, then run the
+            immediate scheduler or simulate the night.
+          </p>
+        </div>
+        <section class="status-card" aria-labelledby="status-heading">
+          <div class="section-heading">
+            <h2 id="status-heading">Service Status</h2>
+            <button id="refresh-status" type="button" class="secondary">Refresh</button>
+          </div>
+          <dl id="status-summary" class="status-summary">
+            <div>
+              <dt>Health</dt>
+              <dd id="status-health">Checking...</dd>
+            </div>
+            <div>
+              <dt>Version</dt>
+              <dd id="status-version">-</dd>
+            </div>
+          </dl>
+          <details>
+            <summary>Configuration</summary>
+            <pre id="status-config">{}</pre>
+          </details>
+        </section>
+      </header>
+
+      <section class="card" aria-labelledby="inputs-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Inputs</p>
+            <h2 id="inputs-heading">Observation context</h2>
+          </div>
+          <p class="hint">Plan paths must be readable by the FastAPI process.</p>
+        </div>
+
+        <div class="form-grid">
+          <label class="field field-wide">
+            <span>Plan paths</span>
+            <textarea
+              id="plan-paths"
+              rows="6"
+              placeholder="/path/to/PLAN_01.toml&#10;/path/to/PLAN_02.toml"
+            ></textarea>
+          </label>
+
+          <label class="field">
+            <span>Site</span>
+            <select id="site-name">
+              <option value="ns" selected>ns - Neot Smadar</option>
+              <option value="wis">wis - Wise Observatory</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Operational units</span>
+            <textarea id="operational-units" rows="3" placeholder="mast01, mast02"></textarea>
+          </label>
+
+          <label class="field">
+            <span>Immediate time</span>
+            <input id="immediate-now" type="datetime-local" />
+            <small>Leave empty to let the API use its default.</small>
+          </label>
+
+          <label class="field">
+            <span>Prediction start</span>
+            <input id="prediction-start" type="datetime-local" />
+          </label>
+
+          <label class="field field-wide">
+            <span>Completed tonight JSON</span>
+            <textarea id="completed-tonight" rows="3">{}</textarea>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="run-immediate" type="button">Run immediate batch</button>
+          <button id="run-predict" type="button">Predict night</button>
+        </div>
+      </section>
+
+      <p id="error-message" class="error-message" role="alert" hidden></p>
+
+      <section class="results-grid">
+        <article class="card" aria-labelledby="immediate-heading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Result</p>
+              <h2 id="immediate-heading">Immediate batch</h2>
+            </div>
+            <span id="immediate-state" class="pill">Not run</span>
+          </div>
+          <div id="immediate-summary" class="empty-state">Run the immediate scheduler to see a batch.</div>
+          <details>
+            <summary>Raw response</summary>
+            <pre id="immediate-json">{}</pre>
+          </details>
+        </article>
+
+        <article class="card" aria-labelledby="prediction-heading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Result</p>
+              <h2 id="prediction-heading">Night prediction</h2>
+            </div>
+            <span id="prediction-state" class="pill">Not run</span>
+          </div>
+          <div id="prediction-summary" class="empty-state">Run prediction to see scheduled batches.</div>
+          <div id="prediction-list" class="prediction-list"></div>
+          <details>
+            <summary>Raw response</summary>
+            <pre id="prediction-json">{}</pre>
+          </details>
+        </article>
+      </section>
+    </main>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

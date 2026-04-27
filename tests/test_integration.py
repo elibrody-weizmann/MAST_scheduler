@@ -194,6 +194,24 @@ class TestPredictedSetupOverhead:
 
 
 class TestAPI:
+    def test_ui_index(self):
+        with TestClient(app) as client:
+            response = client.get("/")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        assert "MAST Scheduler" in response.text
+
+    def test_ui_static_assets(self):
+        with TestClient(app) as client:
+            script_response = client.get("/static/app.js")
+            style_response = client.get("/static/styles.css")
+
+        assert script_response.status_code == 200
+        assert "javascript" in script_response.headers["content-type"]
+        assert style_response.status_code == 200
+        assert "text/css" in style_response.headers["content-type"]
+
     def test_status_endpoint(self):
         with TestClient(app) as client:
             response = client.get("/scheduler/status")

@@ -39,6 +39,21 @@ MAST_common is installed as an editable path dependency from `../MAST/MAST_commo
 uv run uvicorn MAST_scheduler.api.app:app --reload
 ```
 
+Open <http://127.0.0.1:8000/> for the lightweight scheduler UI.
+
+## Browser UI
+
+The FastAPI app serves a dependency-free web interface at `/`. It lets operators:
+
+- Check scheduler service health and active configuration
+- Enter plan TOML paths, site, operational units, and scheduling times
+- Run the immediate scheduler and inspect the selected batch
+- Predict the night and inspect the ordered batch timeline
+
+Plan paths entered in the UI must be readable by the FastAPI process. The UI does
+not upload plan files; it submits paths to the same API contract used by direct
+HTTP clients.
+
 ## API
 
 ### `POST /scheduler/immediate`
