@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import astropy.units as u
 import pytest
 from astropy.coordinates import EarthLocation
-import astropy.units as u
-
 from common.models.plans import Plan
 
 # CalibrationSettings.validate_calibration calls Config().get_thar_filters() which
@@ -29,11 +28,11 @@ WIS_LOCATION = EarthLocation(
 
 # A time that is astronomical night at Wise Observatory (UTC)
 # 2026-04-27 01:00 UTC → ~03:00 local, well into the night
-NOW_NIGHT = datetime(2026, 4, 27, 1, 0, 0, tzinfo=timezone.utc)
+NOW_NIGHT = datetime(2026, 4, 27, 1, 0, 0, tzinfo=UTC)
 
 # A time that is daytime at Wise Observatory (UTC)
 # 2026-04-27 10:00 UTC → ~13:00 local, midday
-NOW_DAY = datetime(2026, 4, 27, 10, 0, 0, tzinfo=timezone.utc)
+NOW_DAY = datetime(2026, 4, 27, 10, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -59,12 +58,12 @@ def operational_units() -> list[str]:
 def load_plan(name: str) -> Plan:
     """Load a fixture plan by short name (e.g. 'minimal', 'too', 'highspec')."""
     mapping = {
-        "minimal":     "PLAN_01KQ6Q7630YXGH6JS37AG5HGDH.toml",
-        "moon":        "PLAN_01KQ6Q7630YXGH6JS37AG5HGDJ.toml",
-        "airmass":     "PLAN_01KQ6Q7630YXGH6JS37AG5HGDK.toml",
+        "minimal": "PLAN_01KQ6Q7630YXGH6JS37AG5HGDH.toml",
+        "moon": "PLAN_01KQ6Q7630YXGH6JS37AG5HGDJ.toml",
+        "airmass": "PLAN_01KQ6Q7630YXGH6JS37AG5HGDK.toml",
         "time_window": "PLAN_01KQ6Q7630YXGH6JS37AG5HGDM.toml",
-        "too":         "PLAN_01KQ6Q7630YXGH6JS37AG5HGDN.toml",
-        "highspec":    "PLAN_01KQ6Q7630YXGH6JS37AG5HGDP.toml",
+        "too": "PLAN_01KQ6Q7630YXGH6JS37AG5HGDN.toml",
+        "highspec": "PLAN_01KQ6Q7630YXGH6JS37AG5HGDP.toml",
     }
     path = FIXTURES_DIR / mapping[name]
     return Plan.from_toml_file(str(path))
@@ -102,4 +101,5 @@ def plan_highspec() -> Plan:
 
 @pytest.fixture
 def all_plans() -> list[Plan]:
-    return [load_plan(name) for name in ("minimal", "moon", "airmass", "time_window", "too", "highspec")]
+    plan_names = ("minimal", "moon", "airmass", "time_window", "too", "highspec")
+    return [load_plan(name) for name in plan_names]

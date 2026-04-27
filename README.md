@@ -111,6 +111,14 @@ uv run ruff check src/ tests/
 uv run ruff format src/ tests/
 ```
 
+Enable automatic Ruff checks on every commit:
+
+```bash
+uv run pre-commit install
+```
+
+Project `.vscode/settings.json` also enables Ruff lint/fix on save in Cursor/VS Code.
+
 ### Test coverage
 
 | Suite | What it tests |

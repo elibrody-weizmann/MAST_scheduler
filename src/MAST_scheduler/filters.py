@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import math
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 import astropy.units as u
+from astroplan import Observer
 from astropy.coordinates import AltAz, EarthLocation, SkyCoord
 from astropy.time import Time
-from astroplan import Observer
-
 from common.models.constraints import WhenToRepeat
 from common.models.plans import Plan
 
@@ -75,7 +74,7 @@ class PlanFilter:
         return self
 
     def _in_time_window(self, tw) -> bool:
-        now = self._now.replace(tzinfo=timezone.utc) if self._now.tzinfo is None else self._now
+        now = self._now.replace(tzinfo=UTC) if self._now.tzinfo is None else self._now
 
         if tw.start_mode != "Anytime" and tw.start is not None:
             start_dt = _to_datetime(tw.start)
@@ -93,7 +92,11 @@ class PlanFilter:
         surviving = []
         altaz_frame = AltAz(obstime=self._astropy_time, location=self._site)
         for plan in self._plans:
-            if plan.constraints is None or plan.constraints.airmass is None or plan.constraints.airmass.max is None:
+            if (
+                plan.constraints is None
+                or plan.constraints.airmass is None
+                or plan.constraints.airmass.max is None
+            ):
                 surviving.append(plan)
                 continue
             coord = _plan_skycoord(plan)
@@ -110,7 +113,11 @@ class PlanFilter:
         surviving = []
         illumination_pct = self._observer.moon_illumination(self._astropy_time) * 100.0
         for plan in self._plans:
-            if plan.constraints is None or plan.constraints.moon is None or plan.constraints.moon.max_phase is None:
+            if (
+                plan.constraints is None
+                or plan.constraints.moon is None
+                or plan.constraints.moon.max_phase is None
+            ):
                 surviving.append(plan)
                 continue
             if illumination_pct <= plan.constraints.moon.max_phase:
@@ -120,8 +127,13 @@ class PlanFilter:
 
     def moon_separation(self) -> PlanFilter:
         constrained = [
-            p for p in self._plans
-            if p.constraints is not None and p.constraints.moon is not None and p.constraints.moon.min_distance is not None
+            p
+            for p in self._plans
+            if (
+                p.constraints is not None
+                and p.constraints.moon is not None
+                and p.constraints.moon.min_distance is not None
+            )
         ]
         if not constrained:
             return self
@@ -129,7 +141,11 @@ class PlanFilter:
         moon_skycoord = SkyCoord(alt=moon_coord.alt, az=moon_coord.az, frame=moon_coord.frame)
         surviving = []
         for plan in self._plans:
-            if plan.constraints is None or plan.constraints.moon is None or plan.constraints.moon.min_distance is None:
+            if (
+                plan.constraints is None
+                or plan.constraints.moon is None
+                or plan.constraints.moon.min_distance is None
+            ):
                 surviving.append(plan)
                 continue
             target_coord = _plan_skycoord(plan)
@@ -159,8 +175,8 @@ class PlanFilter:
 
 def _to_datetime(value: date | datetime) -> datetime:
     if isinstance(value, datetime):
-        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
-    return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+    return datetime(value.year, value.month, value.day, tzinfo=UTC)
 
 
 def _plan_skycoord(plan: Plan) -> SkyCoord:

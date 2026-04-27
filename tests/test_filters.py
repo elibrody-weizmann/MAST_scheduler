@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
-from astropy.coordinates import EarthLocation
 from astroplan import Observer
-
 from common.models.constraints import WhenToRepeat
+
 from MAST_scheduler.config import SchedulerConfig
 from MAST_scheduler.filters import PlanFilter
 
@@ -176,7 +174,6 @@ class TestRepeatsNotExhausted:
 
     def test_passes_twice_per_night_first_time(self):
         plan = load_plan("minimal")
-        from common.models.constraints import WhenToRepeat
         plan.target.repeats.every = WhenToRepeat.twice_per_night
         uid = plan.ulid or ""
         result = make_filter([plan]).repeats_not_exhausted({uid: 1}).plans
@@ -184,7 +181,6 @@ class TestRepeatsNotExhausted:
 
     def test_blocks_twice_per_night_exhausted(self):
         plan = load_plan("minimal")
-        from common.models.constraints import WhenToRepeat
         plan.target.repeats.every = WhenToRepeat.twice_per_night
         uid = plan.ulid or ""
         result = make_filter([plan]).repeats_not_exhausted({uid: 2}).plans

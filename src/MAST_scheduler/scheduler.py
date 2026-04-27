@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import astropy.units as u
+from astroplan import Observer
 from astropy.coordinates import EarthLocation
 from astropy.time import Time
-from astroplan import Observer
-
 from common.models.batches import BatchData
 from common.models.plans import Plan
 
@@ -33,7 +32,7 @@ class Scheduler:
         completed_tonight: dict[str, int] | None = None,
     ) -> BatchData | None:
         if now is None:
-            now = datetime.now(tz=timezone.utc)
+            now = datetime.now(tz=UTC)
 
         feasible = (
             PlanFilter(
@@ -75,13 +74,13 @@ class Scheduler:
         t0 = Time(start_datetime)
 
         night = observer.tonight(time=t0, horizon=-18 * u.deg)
-        night_start: datetime = night[0].to_datetime(timezone=timezone.utc)
-        night_end: datetime = night[1].to_datetime(timezone=timezone.utc)
+        night_start: datetime = night[0].to_datetime(timezone=UTC)
+        night_end: datetime = night[1].to_datetime(timezone=UTC)
 
         # In predictive mode all deployed units are assumed operational
         units = operational_units if operational_units is not None else []
 
-        current_time = max(start_datetime.replace(tzinfo=timezone.utc), night_start)
+        current_time = max(start_datetime.replace(tzinfo=UTC), night_start)
         completed_tonight: dict[str, int] = {}
         results: list[PredictedBatch] = []
         previous_batch: BatchData | None = None
@@ -117,7 +116,9 @@ class Scheduler:
 
             # Remove exhausted "only once" plans
             used_ids = set(pb.plan_ids)
-            remaining = [p for p in remaining if p.ulid not in used_ids or _can_repeat(p, completed_tonight)]
+            remaining = [
+                p for p in remaining if p.ulid not in used_ids or _can_repeat(p, completed_tonight)
+            ]
 
             previous_batch = batch
             current_time = batch_end
@@ -127,12 +128,15 @@ class Scheduler:
 
 def _advance(dt: datetime, seconds: float) -> datetime:
     from datetime import timedelta
+
     return dt + timedelta(seconds=seconds)
 
 
 def _can_repeat(plan: Plan, completed: dict[str, int]) -> bool:
-    from common.models.constraints import WhenToRepeat
     import math
+
+    from common.models.constraints import WhenToRepeat
+
     quotas = {
         WhenToRepeat.only_once: 1,
         WhenToRepeat.once_per_night: 1,
@@ -152,11 +156,14 @@ def _to_predicted_batch(
     duration: float,
 ) -> PredictedBatch:
     from common.models.highspec import HighspecSettings
+
     spec = batch.spec_assignment
     instrument = str(spec.instrument) if spec and spec.instrument else "unknown"
     disperser = None
     if batch.plans:
-        settings = batch.plans[0].spec_assignment.settings if batch.plans[0].spec_assignment else None
+        settings = (
+            batch.plans[0].spec_assignment.settings if batch.plans[0].spec_assignment else None
+        )
         if isinstance(settings, HighspecSettings):
             disperser = str(settings.disperser)
 

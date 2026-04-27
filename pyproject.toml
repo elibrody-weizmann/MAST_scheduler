@@ -34,6 +34,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio",
     "httpx",
+    "pre-commit",
     "ruff",
     "pytest-cov",
 ]
@@ -51,3 +52,8 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.0",
+]

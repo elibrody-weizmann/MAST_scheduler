@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from astroplan import Observer
-
 from common.models.batches import BatchData
 
 from MAST_scheduler.builder import BatchBuilder, _condition_score
@@ -35,15 +34,15 @@ def build(plans, units=None, config=None, site=None, now=None) -> BatchData | No
 
 class TestPriority:
     def test_too_plan_beats_normal(self):
-        normal = load_plan("minimal")   # merit 5, too=False
-        too_plan = load_plan("too")     # merit 10, too=True
+        normal = load_plan("minimal")  # merit 5, too=False
+        too_plan = load_plan("too")  # merit 10, too=True
         batch = build([normal, too_plan])
         assert batch is not None
         plan_ids = {p.ulid for p in batch.plans}
         assert too_plan.ulid in plan_ids
 
     def test_higher_merit_wins(self):
-        low = load_plan("minimal")    # merit 5
+        low = load_plan("minimal")  # merit 5
         high = load_plan("airmass")  # merit 4 — both deepspec, no constraints here
         # Both are deepspec; airmass plan has lower merit; minimal should be preferred
         # They have different merits and both deepspec → both in same group → batch includes both
@@ -53,8 +52,8 @@ class TestPriority:
         assert len(batch.plans) == 2
 
     def test_highspec_in_separate_group(self):
-        deepspec = load_plan("minimal")    # deepspec
-        highspec = load_plan("highspec")   # highspec
+        deepspec = load_plan("minimal")  # deepspec
+        highspec = load_plan("highspec")  # highspec
         # They should be in separate groups; highest-priority group wins
         # highspec has merit 8, deepspec has merit 5 → highspec group wins
         batch = build([deepspec, highspec])
@@ -66,8 +65,8 @@ class TestPriority:
 
 class TestExposureNegotiation:
     def test_batch_exposure_is_max_requested(self):
-        plan_a = load_plan("minimal")    # requested=900, max=1800
-        plan_b = load_plan("airmass")   # requested=1800, max=3600
+        plan_a = load_plan("minimal")  # requested=900, max=1800
+        plan_b = load_plan("airmass")  # requested=1800, max=3600
         # Both deepspec → same group; batch_exp = max(900, 1800) = 1800
         batch = build([plan_a, plan_b])
         assert batch is not None
@@ -75,7 +74,7 @@ class TestExposureNegotiation:
 
     def test_plan_excluded_when_overexposed(self):
         # Plan with max_exposure_duration < batch_exposure_time should be excluded
-        base = load_plan("minimal")         # requested=900, max=1800
+        base = load_plan("minimal")  # requested=900, max=1800
         sensitive = load_plan("time_window")  # requested=600, max=1200
         # batch_exp = max(900, 600) = 900; cap = min(1800, 1200) = 1200; both fit
         # Let's force the case: make sensitive have max=800 so it gets excluded
@@ -91,7 +90,6 @@ class TestExposureNegotiation:
 
 class TestCalibration:
     def test_lamp_on_if_any_plan_requests_it(self):
-        no_lamp = load_plan("minimal")     # no calibration
         with_lamp = load_plan("highspec")  # lamp_on=true — but different instrument
         # They're different instruments, so the lamp plan wins its own group
         batch = build([with_lamp])
@@ -148,28 +146,34 @@ class TestConditionScore:
     def test_score_in_range(self):
         plan = load_plan("minimal")
         obs, target = self._mock_observer_and_coord(45.0, 90.0)
-        with patch("MAST_scheduler.builder._plan_skycoord", return_value=target):
-            with patch("MAST_scheduler.builder.Observer", return_value=obs):
-                score = _condition_score([plan], WIS_LOCATION, NOW_NIGHT, SchedulerConfig())
+        with (
+            patch("MAST_scheduler.builder._plan_skycoord", return_value=target),
+            patch("MAST_scheduler.builder.Observer", return_value=obs),
+        ):
+            score = _condition_score([plan], WIS_LOCATION, NOW_NIGHT, SchedulerConfig())
         assert 0.0 <= score <= 1.0
 
     def test_score_neutral_urgency_when_no_time_window(self):
         plan = load_plan("minimal")  # no time_window constraint
         obs, target = self._mock_observer_and_coord(60.0, 120.0)
-        with patch("MAST_scheduler.builder._plan_skycoord", return_value=target):
-            with patch("MAST_scheduler.builder.Observer", return_value=obs):
-                score = _condition_score([plan], WIS_LOCATION, NOW_NIGHT, SchedulerConfig())
+        with (
+            patch("MAST_scheduler.builder._plan_skycoord", return_value=target),
+            patch("MAST_scheduler.builder.Observer", return_value=obs),
+        ):
+            score = _condition_score([plan], WIS_LOCATION, NOW_NIGHT, SchedulerConfig())
         # urgency defaults to 0.5; score should be non-zero and valid
         assert 0.0 < score <= 1.0
 
     def test_builder_uses_condition_score_to_break_ties(self):
-        # Two deepspec plans in the same group; score doesn't split them but builder should not crash
+        # Two deepspec plans in the same group; score doesn't split them.
         plan_a = load_plan("minimal")
         plan_b = load_plan("airmass")
         obs, target = self._mock_observer_and_coord(50.0, 80.0)
-        with patch("MAST_scheduler.builder._plan_skycoord", return_value=target):
-            with patch("MAST_scheduler.builder.Observer", return_value=obs):
-                batch = build([plan_a, plan_b], site=WIS_LOCATION, now=NOW_NIGHT)
+        with (
+            patch("MAST_scheduler.builder._plan_skycoord", return_value=target),
+            patch("MAST_scheduler.builder.Observer", return_value=obs),
+        ):
+            batch = build([plan_a, plan_b], site=WIS_LOCATION, now=NOW_NIGHT)
         assert batch is not None
 
     def test_builder_works_without_site_and_now(self):

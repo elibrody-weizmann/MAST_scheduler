@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import pytest
-from ulid import ULID
-
 from common.models.batches import BatchData
 from common.models.calibration import CalibrationSettings
 from common.models.highspec import HighspecSettings
 from common.models.spectrographs import SpectrographModel
+from ulid import ULID
 
 from MAST_scheduler.builder import _compute_setup_overhead
 from MAST_scheduler.config import SchedulerConfig
@@ -14,8 +13,12 @@ from MAST_scheduler.config import SchedulerConfig
 from .conftest import load_plan
 
 
-def _spec(instrument: str, disperser: str | None = None, lamp_on: bool = False) -> SpectrographModel:
-    calibration = CalibrationSettings.model_construct(lamp_on=lamp_on, filter="ND4000" if lamp_on else None)
+def _spec(
+    instrument: str, disperser: str | None = None, lamp_on: bool = False
+) -> SpectrographModel:
+    calibration = CalibrationSettings.model_construct(
+        lamp_on=lamp_on, filter="ND4000" if lamp_on else None
+    )
     settings = HighspecSettings.model_construct(disperser=disperser) if disperser else None
     return SpectrographModel.model_construct(
         instrument=instrument,

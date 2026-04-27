@@ -3,18 +3,15 @@ from __future__ import annotations
 import math
 from datetime import datetime
 
-from ulid import ULID
-
-import astropy.units as u
+from astroplan import Observer
 from astropy.coordinates import AltAz, EarthLocation
 from astropy.time import Time
-from astroplan import Observer
-
 from common.models.batches import BatchData
 from common.models.calibration import CalibrationSettings
 from common.models.highspec import HighspecSettings
 from common.models.plans import Plan
 from common.models.spectrographs import SpectrographModel
+from ulid import ULID
 
 from .config import SchedulerConfig
 from .filters import _plan_skycoord, _to_datetime
@@ -52,7 +49,9 @@ def _compute_setup_overhead(
     overhead = 0.0
 
     prev_instrument = str(previous.spec_assignment.instrument) if previous.spec_assignment else ""
-    next_instrument = str(next_batch.spec_assignment.instrument) if next_batch.spec_assignment else ""
+    next_instrument = (
+        str(next_batch.spec_assignment.instrument) if next_batch.spec_assignment else ""
+    )
 
     if prev_instrument != next_instrument:
         overhead += config.spectrograph_switch_time
@@ -62,11 +61,23 @@ def _compute_setup_overhead(
         next_disperser = str(ns.disperser) if isinstance(ns, HighspecSettings) else None
         ps = previous.spec_assignment.settings if previous.spec_assignment else None
         prev_disperser: str | None = str(ps.disperser) if isinstance(ps, HighspecSettings) else None
-        if prev_disperser is not None and next_disperser is not None and prev_disperser != next_disperser:
+        if (
+            prev_disperser is not None
+            and next_disperser is not None
+            and prev_disperser != next_disperser
+        ):
             overhead += config.grating_stage_move_time
 
-    prev_lamp = bool(previous.spec_assignment.calibration.lamp_on) if previous.spec_assignment and previous.spec_assignment.calibration else False
-    next_lamp = bool(next_batch.spec_assignment.calibration.lamp_on) if next_batch.spec_assignment and next_batch.spec_assignment.calibration else False
+    prev_lamp = (
+        bool(previous.spec_assignment.calibration.lamp_on)
+        if previous.spec_assignment and previous.spec_assignment.calibration
+        else False
+    )
+    next_lamp = (
+        bool(next_batch.spec_assignment.calibration.lamp_on)
+        if next_batch.spec_assignment and next_batch.spec_assignment.calibration
+        else False
+    )
     if not prev_lamp and next_lamp:
         overhead += config.lamp_warmup_time
     elif prev_lamp and not next_lamp:
@@ -95,7 +106,11 @@ def _condition_score(
         alt_deg = coord.transform_to(altaz_frame).alt.deg
         if alt_deg > 0:
             airmass = 1.0 / math.sin(math.radians(alt_deg))
-            max_am = (plan.constraints.airmass.max if plan.constraints and plan.constraints.airmass and plan.constraints.airmass.max else 3.0)
+            max_am = (
+                plan.constraints.airmass.max
+                if plan.constraints and plan.constraints.airmass and plan.constraints.airmass.max
+                else 3.0
+            )
             sub.append(max(0.0, 1.0 - (airmass - 1.0) / (max_am - 1.0)))
         else:
             sub.append(0.0)
@@ -130,7 +145,11 @@ def _group_priority(
     has_too = any(p.too for p in group)
     max_merit = max((p.merit or 1) for p in group)
     exposure = _negotiate_exposure(group) or 0.0
-    cond = _condition_score(group, site, now, config) if site is not None and now is not None and config is not None else 0.0
+    cond = (
+        _condition_score(group, site, now, config)
+        if site is not None and now is not None and config is not None
+        else 0.0
+    )
     return (has_too, max_merit, exposure, cond)
 
 
@@ -184,7 +203,11 @@ class BatchBuilder:
         if not self._plans:
             return None
 
-        eligible = [p for p in self._plans if p.spec_assignment is not None and p.spec_assignment.instrument is not None]
+        eligible = [
+            p
+            for p in self._plans
+            if p.spec_assignment is not None and p.spec_assignment.instrument is not None
+        ]
         if not eligible:
             return None
 
@@ -216,12 +239,18 @@ class BatchBuilder:
         return None
 
 
-def _make_scheduled_batch(plans: list[Plan], batch_exp: float, config: SchedulerConfig) -> BatchData:
+def _make_scheduled_batch(
+    plans: list[Plan], batch_exp: float, config: SchedulerConfig
+) -> BatchData:
     autofocus_duration = config.autofocus_time if any(p.autofocus for p in plans) else 0.0
     max_timeout = max((p.timeout_to_guiding or 0) for p in plans)
 
     num_exposures = max(
-        (p.target.requested_number_of_exposures for p in plans if p.target.requested_number_of_exposures is not None),
+        (
+            p.target.requested_number_of_exposures
+            for p in plans
+            if p.target.requested_number_of_exposures is not None
+        ),
         default=1,
     )
 
@@ -235,7 +264,8 @@ def _make_scheduled_batch(plans: list[Plan], batch_exp: float, config: Scheduler
         nd_filters = [
             p.spec_assignment.calibration.filter
             for p in plans
-            if p.spec_assignment and p.spec_assignment.calibration
+            if p.spec_assignment
+            and p.spec_assignment.calibration
             and p.spec_assignment.calibration.lamp_on
             and p.spec_assignment.calibration.filter
         ]

@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from ..config import SchedulerConfig
 from ..scheduler import Scheduler
 from .routes import router
 
