@@ -38,6 +38,8 @@ docker compose --profile test run --rm test
 Notes:
 - Run commands from the `MAST_scheduler` repository root.
 - Docker Desktop/Engine must be running before executing API/test commands.
+- Check out `MAST_common` next to this repository so the sibling path exists:
+  - `../MAST_common` (required by Docker bind mounts used by `scheduler` and `test` services)
 
 ## What it does
 
