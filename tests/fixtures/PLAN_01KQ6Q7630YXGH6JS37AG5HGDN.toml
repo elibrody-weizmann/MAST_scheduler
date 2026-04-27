@@ -1,0 +1,19 @@
+ulid     = "01KQ6Q7630YXGH6JS37AG5HGDN"
+owner    = "test"
+merit    = 10
+too      = true
+approved = true
+
+[target]
+name                         = "GRB 260427A"
+ra_hours                     = "05:34:32.00"
+dec_degrees                  = "+22:00:52.0"
+requested_exposure_duration  = 300.0
+max_exposure_duration        = 1800.0
+
+[target.repeats]
+every  = "As much as possible"
+nights = 1
+
+[spec_assignment]
+instrument = "deepspec"

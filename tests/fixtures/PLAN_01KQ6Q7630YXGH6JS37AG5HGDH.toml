@@ -1,0 +1,18 @@
+ulid     = "01KQ6Q7630YXGH6JS37AG5HGDH"
+owner    = "test"
+merit    = 5
+approved = true
+
+[target]
+name                         = "NGC 1275"
+ra_hours                     = "03:19:48.16"
+dec_degrees                  = "+41:30:42.1"
+requested_exposure_duration  = 900.0
+max_exposure_duration        = 1800.0
+
+[target.repeats]
+every  = "Once per night"
+nights = 1
+
+[spec_assignment]
+instrument = "deepspec"

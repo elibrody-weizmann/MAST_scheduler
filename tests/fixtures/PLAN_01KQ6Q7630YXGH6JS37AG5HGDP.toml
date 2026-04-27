@@ -1,0 +1,25 @@
+ulid     = "01KQ6Q7630YXGH6JS37AG5HGDP"
+owner    = "test"
+merit    = 8
+approved = true
+
+[target]
+name                         = "HD 189733"
+ra_hours                     = "20:00:43.71"
+dec_degrees                  = "+22:42:39.1"
+requested_exposure_duration  = 1800.0
+max_exposure_duration        = 3600.0
+
+[target.repeats]
+every  = "Once per night"
+nights = 1
+
+[spec_assignment]
+instrument = "highspec"
+
+[spec_assignment.settings]
+disperser = "Ca"
+
+[spec_assignment.calibration]
+lamp_on = true
+filter  = "ND4000"

@@ -1,0 +1,37 @@
+services:
+  # Named "mast-wis-control" so that Config()'s hardcoded MongoDB URI
+  # "mongodb://mast-wis-control:27017" resolves to this service.
+  mast-wis-control:
+    image: mongo:7
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  scheduler:
+    build: .
+    hostname: mast-ns-control
+    depends_on:
+      mast-wis-control:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ../MAST/MAST_common:/mast_deps/common
+      - ../MAST/MAST_common:/mast_deps/MAST_common
+    command: uvicorn MAST_scheduler.api.app:app --host 0.0.0.0 --port 8000 --reload
+
+  test:
+    build: .
+    hostname: mast-ns-control
+    depends_on:
+      mast-wis-control:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - ../MAST/MAST_common:/mast_deps/common
+      - ../MAST/MAST_common:/mast_deps/MAST_common
+    command: pytest -v
+    profiles: [test]

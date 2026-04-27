@@ -1,0 +1,24 @@
+ulid     = "01KQ6Q7630YXGH6JS37AG5HGDM"
+owner    = "test"
+merit    = 7
+approved = true
+
+[target]
+name                         = "NGC 1068"
+ra_hours                     = "02:42:40.71"
+dec_degrees                  = "-00:00:47.8"
+requested_exposure_duration  = 600.0
+max_exposure_duration        = 1200.0
+
+[target.repeats]
+every  = "Once per night"
+nights = 1
+
+[spec_assignment]
+instrument = "deepspec"
+
+[constraints.time_window]
+start_mode = "DateTime"
+end_mode   = "DateTime"
+start      = "2026-04-27T00:00:00"
+end        = "2026-04-27T06:00:00"

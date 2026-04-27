@@ -1,0 +1,22 @@
+ulid     = "01KQ6Q7630YXGH6JS37AG5HGDJ"
+owner    = "test"
+merit    = 6
+approved = true
+
+[target]
+name                         = "M31"
+ra_hours                     = "00:42:44.33"
+dec_degrees                  = "+41:16:07.5"
+requested_exposure_duration  = 1200.0
+max_exposure_duration        = 1800.0
+
+[target.repeats]
+every  = "Once per night"
+nights = 1
+
+[spec_assignment]
+instrument = "deepspec"
+
+[constraints.moon]
+max_phase    = 30.0
+min_distance = 45.0

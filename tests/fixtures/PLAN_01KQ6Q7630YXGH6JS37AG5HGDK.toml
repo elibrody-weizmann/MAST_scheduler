@@ -1,0 +1,21 @@
+ulid     = "01KQ6Q7630YXGH6JS37AG5HGDK"
+owner    = "test"
+merit    = 4
+approved = true
+
+[target]
+name                         = "NGC 4889"
+ra_hours                     = "13:00:08.12"
+dec_degrees                  = "+27:58:37.0"
+requested_exposure_duration  = 1800.0
+max_exposure_duration        = 3600.0
+
+[target.repeats]
+every  = "Once per night"
+nights = 1
+
+[spec_assignment]
+instrument = "deepspec"
+
+[constraints.airmass]
+max = 1.5
