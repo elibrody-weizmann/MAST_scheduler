@@ -74,20 +74,36 @@ def immediate(req: ImmediateRequest, request: Request) -> ImmediateResponse:
     site = _resolve_site(req.site_name)
     plans = _load_plans(req.plan_paths)
 
-    batch = scheduler.make_immediate_batch(
-        plans,
-        site=site,
-        operational_units=req.operational_units,
-        now=req.now,
-        completed_tonight=req.completed_tonight,
-    )
+    if req.include_trace:
+        batch, trace = scheduler.make_immediate_batch_with_trace(
+            plans,
+            site=site,
+            operational_units=req.operational_units,
+            now=req.now,
+            completed_tonight=req.completed_tonight,
+        )
+    else:
+        batch = scheduler.make_immediate_batch(
+            plans,
+            site=site,
+            operational_units=req.operational_units,
+            now=req.now,
+            completed_tonight=req.completed_tonight,
+        )
+        trace = None
 
     if batch is None:
-        return ImmediateResponse(batch=None, feasible_plan_count=0, message="No feasible plans")
+        return ImmediateResponse(
+            batch=None,
+            feasible_plan_count=0,
+            message="No feasible plans",
+            trace=trace,
+        )
 
     return ImmediateResponse(
         batch=batch.model_dump(mode="json", exclude={"plans"}),
         feasible_plan_count=len(batch.plans),
+        trace=trace,
     )
 
 
@@ -97,20 +113,36 @@ def immediate_inline(req: InlineImmediateRequest, request: Request) -> Immediate
     site = _resolve_site(req.site_name)
     plans = _load_inline_plans(req.plans)
 
-    batch = scheduler.make_immediate_batch(
-        plans,
-        site=site,
-        operational_units=req.operational_units,
-        now=req.now,
-        completed_tonight=req.completed_tonight,
-    )
+    if req.include_trace:
+        batch, trace = scheduler.make_immediate_batch_with_trace(
+            plans,
+            site=site,
+            operational_units=req.operational_units,
+            now=req.now,
+            completed_tonight=req.completed_tonight,
+        )
+    else:
+        batch = scheduler.make_immediate_batch(
+            plans,
+            site=site,
+            operational_units=req.operational_units,
+            now=req.now,
+            completed_tonight=req.completed_tonight,
+        )
+        trace = None
 
     if batch is None:
-        return ImmediateResponse(batch=None, feasible_plan_count=0, message="No feasible plans")
+        return ImmediateResponse(
+            batch=None,
+            feasible_plan_count=0,
+            message="No feasible plans",
+            trace=trace,
+        )
 
     return ImmediateResponse(
         batch=batch.model_dump(mode="json", exclude={"plans"}),
         feasible_plan_count=len(batch.plans),
+        trace=trace,
     )
 
 
@@ -128,17 +160,27 @@ def predict(req: PredictRequest, request: Request) -> PredictResponse:
     night_start = night[0].to_datetime(timezone=UTC)
     night_end = night[1].to_datetime(timezone=UTC)
 
-    batches = scheduler.make_predicted_batches(
-        plans,
-        site=site,
-        start_datetime=req.start_datetime,
-        operational_units=req.operational_units,
-    )
+    if req.include_trace:
+        batches, trace = scheduler.make_predicted_batches_with_trace(
+            plans,
+            site=site,
+            start_datetime=req.start_datetime,
+            operational_units=req.operational_units,
+        )
+    else:
+        batches = scheduler.make_predicted_batches(
+            plans,
+            site=site,
+            start_datetime=req.start_datetime,
+            operational_units=req.operational_units,
+        )
+        trace = None
 
     return PredictResponse(
         predicted_batches=batches,
         night_start=night_start,
         night_end=night_end,
+        trace=trace,
     )
 
 
@@ -156,17 +198,27 @@ def predict_inline(req: InlinePredictRequest, request: Request) -> PredictRespon
     night_start = night[0].to_datetime(timezone=UTC)
     night_end = night[1].to_datetime(timezone=UTC)
 
-    batches = scheduler.make_predicted_batches(
-        plans,
-        site=site,
-        start_datetime=req.start_datetime,
-        operational_units=req.operational_units,
-    )
+    if req.include_trace:
+        batches, trace = scheduler.make_predicted_batches_with_trace(
+            plans,
+            site=site,
+            start_datetime=req.start_datetime,
+            operational_units=req.operational_units,
+        )
+    else:
+        batches = scheduler.make_predicted_batches(
+            plans,
+            site=site,
+            start_datetime=req.start_datetime,
+            operational_units=req.operational_units,
+        )
+        trace = None
 
     return PredictResponse(
         predicted_batches=batches,
         night_start=night_start,
         night_end=night_end,
+        trace=trace,
     )
 
 

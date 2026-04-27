@@ -4,6 +4,119 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator
 
+TRACE_STAGE_ASTRONOMICAL_NIGHT = "astronomical_night"
+TRACE_STAGE_TIME_WINDOW = "within_time_window"
+TRACE_STAGE_AIRMASS = "airmass"
+TRACE_STAGE_MOON_PHASE = "moon_phase"
+TRACE_STAGE_MOON_SEPARATION = "moon_separation"
+TRACE_STAGE_QUORUM = "quorum_available"
+TRACE_STAGE_REPEATS = "repeats_not_exhausted"
+TRACE_STAGE_GROUPING = "grouping"
+TRACE_STAGE_PRIORITY = "priority"
+TRACE_STAGE_BUILD = "build"
+
+
+class TraceRationale(BaseModel):
+    code: str
+    message: str
+    values: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+
+class PlanTraceSummary(BaseModel):
+    plan_id: str
+    name: str
+    instrument: str | None = None
+    disperser: str | None = None
+    target_name: str | None = None
+    merit: int | None = None
+    too: bool = False
+    quorum: int
+    requested_exposure_seconds: float | None = None
+    max_exposure_seconds: float | None = None
+    requested_num_exposures: int | None = None
+    allocated_units: list[str] = Field(default_factory=list)
+    preferred_units: list[str] = Field(default_factory=list)
+
+
+class DroppedPlanTrace(BaseModel):
+    plan_id: str
+    rationales: list[TraceRationale] = Field(default_factory=list)
+
+
+class FilterStageTrace(BaseModel):
+    stage: str
+    label: str
+    input_plan_ids: list[str] = Field(default_factory=list)
+    kept_plan_ids: list[str] = Field(default_factory=list)
+    dropped: list[DroppedPlanTrace] = Field(default_factory=list)
+
+
+class GroupTrace(BaseModel):
+    group_id: str
+    instrument: str
+    disperser: str | None = None
+    plan_ids: list[str] = Field(default_factory=list)
+
+
+class GroupingTrace(BaseModel):
+    groups: list[GroupTrace] = Field(default_factory=list)
+    excluded: list[DroppedPlanTrace] = Field(default_factory=list)
+
+
+class PriorityFactorTrace(BaseModel):
+    has_too: bool
+    max_merit: int
+    negotiated_exposure_seconds: float
+    condition_score: float
+
+
+class PriorityGroupTrace(BaseModel):
+    group_id: str
+    plan_ids: list[str] = Field(default_factory=list)
+    factors: PriorityFactorTrace
+
+
+class PriorityTrace(BaseModel):
+    ranked_groups: list[PriorityGroupTrace] = Field(default_factory=list)
+    winning_group_id: str | None = None
+    rationale: str = ""
+
+
+class BatchBuildTrace(BaseModel):
+    selected_group_id: str | None = None
+    negotiated_exposure_seconds: float | None = None
+    dropped_by_exposure_cap: list[DroppedPlanTrace] = Field(default_factory=list)
+    viable_plan_ids: list[str] = Field(default_factory=list)
+    allocated_units_by_plan: dict[str, list[str]] = Field(default_factory=dict)
+    final_plan_ids: list[str] = Field(default_factory=list)
+    final_batch_ulid: str | None = None
+    predicted_duration_seconds: float | None = None
+
+
+class ImmediateScheduleTrace(BaseModel):
+    input_plans: list[PlanTraceSummary] = Field(default_factory=list)
+    filter_stages: list[FilterStageTrace] = Field(default_factory=list)
+    grouping: GroupingTrace | None = None
+    priority: PriorityTrace | None = None
+    build: BatchBuildTrace | None = None
+    final_plan_ids: list[str] = Field(default_factory=list)
+
+
+class PredictedIterationTrace(BaseModel):
+    iteration: int
+    batch_start: datetime
+    batch_end: datetime
+    setup_overhead_seconds: float
+    duration_seconds: float
+    immediate_trace: ImmediateScheduleTrace
+    remaining_plan_ids_after_iteration: list[str] = Field(default_factory=list)
+
+
+class PredictedScheduleTrace(BaseModel):
+    iterations: list[PredictedIterationTrace] = Field(default_factory=list)
+    night_start: datetime | None = None
+    night_end: datetime | None = None
+
 
 class PredictedBatch(BaseModel):
     ulid: str
@@ -26,12 +139,14 @@ class ImmediateRequest(BaseModel):
     site_name: str = "ns"
     now: datetime | None = None
     completed_tonight: dict[str, int] = Field(default_factory=dict)
+    include_trace: bool = False
 
 
 class ImmediateResponse(BaseModel):
     batch: dict | None
     feasible_plan_count: int
     message: str = ""
+    trace: ImmediateScheduleTrace | None = None
 
 
 class PredictRequest(BaseModel):
@@ -39,6 +154,7 @@ class PredictRequest(BaseModel):
     start_datetime: datetime
     site_name: str = "ns"
     operational_units: list[str] | None = None
+    include_trace: bool = False
 
 
 class InlinePlansMixin(BaseModel):
@@ -56,12 +172,14 @@ class InlineImmediateRequest(InlinePlansMixin):
     site_name: str = "ns"
     now: datetime | None = None
     completed_tonight: dict[str, int] = Field(default_factory=dict)
+    include_trace: bool = False
 
 
 class InlinePredictRequest(InlinePlansMixin):
     start_datetime: datetime
     site_name: str = "ns"
     operational_units: list[str] | None = None
+    include_trace: bool = False
 
 
 MOCK_PRESET_BALANCED = "balanced"
@@ -119,6 +237,7 @@ class PredictResponse(BaseModel):
     predicted_batches: list[PredictedBatch]
     night_start: datetime | None
     night_end: datetime | None
+    trace: PredictedScheduleTrace | None = None
 
 
 class StatusResponse(BaseModel):

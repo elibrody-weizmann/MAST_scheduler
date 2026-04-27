@@ -330,3 +330,63 @@ class TestAPI:
         assert response.status_code == 200
         data = response.json()
         assert "feasible_plan_count" in data
+
+    def test_immediate_inline_returns_trace_when_enabled(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/immediate/inline",
+                json={
+                    "plans": [load_plan("minimal").model_dump(mode="json")],
+                    "operational_units": ["mast01"],
+                    "site_name": "ns",
+                    "include_trace": True,
+                },
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert "trace" in data
+        assert data["trace"] is not None
+
+    def test_predict_inline_returns_trace_when_enabled(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/predict/inline",
+                json={
+                    "plans": [load_plan("minimal").model_dump(mode="json")],
+                    "start_datetime": "2026-04-27T19:00:00Z",
+                    "site_name": "ns",
+                    "operational_units": ["mast01"],
+                    "include_trace": True,
+                },
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert "trace" in data
+        assert data["trace"] is not None
+        assert "iterations" in data["trace"]
+        assert isinstance(data["trace"]["iterations"], list)
+        if data["trace"]["iterations"]:
+            first_iteration = data["trace"]["iterations"][0]
+            assert "immediate_trace" in first_iteration
+            assert "filter_stages" in first_iteration["immediate_trace"]
+
+    def test_predict_inline_no_batch_still_returns_trace_iteration(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/predict/inline",
+                json={
+                    "plans": [load_plan("minimal").model_dump(mode="json")],
+                    "start_datetime": "2026-04-27T19:00:00Z",
+                    "site_name": "ns",
+                    "operational_units": [],
+                    "include_trace": True,
+                },
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["predicted_batches"] == []
+        assert data["trace"] is not None
+        assert len(data["trace"]["iterations"]) == 1
+        first_iteration = data["trace"]["iterations"][0]
+        assert first_iteration["duration_seconds"] == 0.0
+        assert first_iteration["immediate_trace"]["final_plan_ids"] == []

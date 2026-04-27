@@ -15,6 +15,16 @@ from ulid import ULID
 
 from .config import SchedulerConfig
 from .filters import _plan_skycoord, _to_datetime
+from .models import (
+    BatchBuildTrace,
+    DroppedPlanTrace,
+    GroupingTrace,
+    GroupTrace,
+    PriorityFactorTrace,
+    PriorityGroupTrace,
+    PriorityTrace,
+    TraceRationale,
+)
 
 # Priority order for ND calibration filters — higher index = denser
 _ND_ORDER = ["ND1000", "ND2000", "ND4000"]
@@ -200,8 +210,14 @@ class BatchBuilder:
         self._now = now
 
     def build(self) -> BatchData | None:
+        batch, _, _, _ = self.build_with_trace()
+        return batch
+
+    def build_with_trace(
+        self,
+    ) -> tuple[BatchData | None, GroupingTrace, PriorityTrace, BatchBuildTrace]:
         if not self._plans:
-            return None
+            return None, GroupingTrace(), PriorityTrace(), BatchBuildTrace()
 
         eligible = [
             p
@@ -209,34 +225,179 @@ class BatchBuilder:
             if p.spec_assignment is not None and p.spec_assignment.instrument is not None
         ]
         if not eligible:
-            return None
+            grouping = GroupingTrace(
+                excluded=[
+                    DroppedPlanTrace(
+                        plan_id=_plan_id(plan),
+                        rationales=[
+                            TraceRationale(
+                                code="missing_spec_assignment",
+                                message="Plan missing spectrograph assignment or instrument",
+                            )
+                        ],
+                    )
+                    for plan in self._plans
+                ]
+            )
+            return None, grouping, PriorityTrace(), BatchBuildTrace()
 
         groups: dict[tuple[str, str | None], list[Plan]] = {}
         for plan in eligible:
             key = _group_key(plan)
             groups.setdefault(key, []).append(plan)
 
-        sorted_groups = sorted(
-            groups.values(),
-            key=lambda g: _group_priority(g, self._site, self._now, self._config),
-            reverse=True,
+        excluded = [
+            DroppedPlanTrace(
+                plan_id=_plan_id(plan),
+                rationales=[
+                    TraceRationale(
+                        code="missing_spec_assignment",
+                        message="Plan missing spectrograph assignment or instrument",
+                    )
+                ],
+            )
+            for plan in self._plans
+            if plan not in eligible
+        ]
+        grouping = GroupingTrace(
+            groups=[
+                GroupTrace(
+                    group_id=_group_id(key),
+                    instrument=key[0],
+                    disperser=key[1],
+                    plan_ids=[_plan_id(plan) for plan in group],
+                )
+                for key, group in groups.items()
+            ],
+            excluded=excluded,
         )
 
-        for group in sorted_groups:
+        ranked_groups = sorted(
+            groups.items(),
+            key=lambda entry: _group_priority(entry[1], self._site, self._now, self._config),
+            reverse=True,
+        )
+        priority = PriorityTrace(
+            ranked_groups=[
+                PriorityGroupTrace(
+                    group_id=_group_id(key),
+                    plan_ids=[_plan_id(plan) for plan in group],
+                    factors=_priority_factors(group, self._site, self._now, self._config),
+                )
+                for key, group in ranked_groups
+            ],
+            winning_group_id=_group_id(ranked_groups[0][0]) if ranked_groups else None,
+            rationale=_priority_rationale(ranked_groups, self._site, self._now, self._config),
+        )
+
+        build_trace = BatchBuildTrace(selected_group_id=priority.winning_group_id)
+
+        for key, group in ranked_groups:
+            build_trace.selected_group_id = _group_id(key)
             batch_exp = _negotiate_exposure(group)
             if batch_exp is None:
                 continue
+            build_trace.negotiated_exposure_seconds = float(batch_exp)
 
             viable = _apply_exposure_cap(group, batch_exp)
             if not viable:
+                build_trace.dropped_by_exposure_cap = [
+                    DroppedPlanTrace(
+                        plan_id=_plan_id(plan),
+                        rationales=[
+                            TraceRationale(
+                                code="exposure_cap_exceeded",
+                                message="Plan maximum exposure is below negotiated group exposure",
+                                values={
+                                    "negotiated_exposure_seconds": float(batch_exp),
+                                    "max_exposure_seconds": float(
+                                        plan.target.max_exposure_duration or 0.0
+                                    ),
+                                },
+                            )
+                        ],
+                    )
+                    for plan in group
+                ]
                 continue
 
+            build_trace.viable_plan_ids = [_plan_id(plan) for plan in viable]
+            build_trace.dropped_by_exposure_cap = [
+                DroppedPlanTrace(
+                    plan_id=_plan_id(plan),
+                    rationales=[
+                        TraceRationale(
+                            code="exposure_cap_exceeded",
+                            message="Plan maximum exposure is below negotiated group exposure",
+                            values={
+                                "negotiated_exposure_seconds": float(batch_exp),
+                                "max_exposure_seconds": float(
+                                    plan.target.max_exposure_duration or 0.0
+                                ),
+                            },
+                        )
+                    ],
+                )
+                for plan in group
+                if plan not in viable
+            ]
             for plan in viable:
                 plan.allocated_units = _allocate_units(plan, self._operational_units)
+                build_trace.allocated_units_by_plan[_plan_id(plan)] = list(plan.allocated_units)
 
-            return _make_scheduled_batch(viable, batch_exp, self._config)
+            batch = _make_scheduled_batch(viable, batch_exp, self._config)
+            build_trace.final_plan_ids = [_plan_id(plan) for plan in batch.plans]
+            build_trace.final_batch_ulid = str(batch.ulid)
+            build_trace.predicted_duration_seconds = float(batch.predicted_duration or 0.0)
+            return batch, grouping, priority, build_trace
 
-        return None
+        return None, grouping, priority, build_trace
+
+
+def _priority_factors(
+    group: list[Plan],
+    site: EarthLocation | None,
+    now: datetime | None,
+    config: SchedulerConfig | None,
+) -> PriorityFactorTrace:
+    has_too, max_merit, exposure, condition_score = _group_priority(group, site, now, config)
+    return PriorityFactorTrace(
+        has_too=bool(has_too),
+        max_merit=int(max_merit),
+        negotiated_exposure_seconds=float(exposure),
+        condition_score=float(condition_score),
+    )
+
+
+def _priority_rationale(
+    ranked_groups: list[tuple[tuple[str, str | None], list[Plan]]],
+    site: EarthLocation | None,
+    now: datetime | None,
+    config: SchedulerConfig | None,
+) -> str:
+    if not ranked_groups:
+        return "No eligible groups were available."
+    winner_key, winner_group = ranked_groups[0]
+    winner_priority = _group_priority(winner_group, site, now, config)
+    if len(ranked_groups) == 1:
+        return f"Only one eligible group remained: {_group_id(winner_key)}."
+    runner_key, runner_group = ranked_groups[1]
+    runner_priority = _group_priority(runner_group, site, now, config)
+    return (
+        f"Group {_group_id(winner_key)} outranked {_group_id(runner_key)} "
+        f"with priority {winner_priority} over {runner_priority}."
+    )
+
+
+def _group_id(key: tuple[str, str | None]) -> str:
+    instrument, disperser = key
+    if disperser:
+        return f"{instrument}:{disperser}"
+    return f"{instrument}:default"
+
+
+def _plan_id(plan: Plan) -> str:
+    return plan.ulid or ""
 
 
 def _make_scheduled_batch(

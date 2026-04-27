@@ -13,7 +13,13 @@ from common.models.plans import Plan
 from .builder import BatchBuilder, _compute_setup_overhead
 from .config import SchedulerConfig
 from .filters import PlanFilter
-from .models import PredictedBatch
+from .models import (
+    ImmediateScheduleTrace,
+    PlanTraceSummary,
+    PredictedBatch,
+    PredictedIterationTrace,
+    PredictedScheduleTrace,
+)
 
 if TYPE_CHECKING:
     pass
@@ -31,45 +37,62 @@ class Scheduler:
         now: datetime | None = None,
         completed_tonight: dict[str, int] | None = None,
     ) -> BatchData | None:
+        batch, _ = self.make_immediate_batch_with_trace(
+            pending_plans=pending_plans,
+            site=site,
+            operational_units=operational_units,
+            now=now,
+            completed_tonight=completed_tonight,
+        )
+        return batch
+
+    def make_immediate_batch_with_trace(
+        self,
+        pending_plans: list[Plan],
+        site: EarthLocation,
+        operational_units: list[str],
+        now: datetime | None = None,
+        completed_tonight: dict[str, int] | None = None,
+    ) -> tuple[BatchData | None, ImmediateScheduleTrace]:
         if now is None:
             now = datetime.now(tz=UTC)
 
-        feasible = (
-            PlanFilter(
-                pending_plans,
-                site=site,
-                now=now,
-                operational_units=operational_units,
-                config=self.config,
-            )
-            .astronomical_night()
-            .within_time_window()
-            .airmass()
-            .moon_phase()
-            .moon_separation()
-            .quorum_available()
-            .repeats_not_exhausted(completed_tonight)
-            .plans
+        trace = ImmediateScheduleTrace(
+            input_plans=[_plan_trace_summary(plan) for plan in pending_plans]
         )
 
-        if not feasible:
-            return None
+        feasible, filter_stages = PlanFilter(
+            pending_plans,
+            site=site,
+            now=now,
+            operational_units=operational_units,
+            config=self.config,
+        ).run_full_chain_with_trace(completed_tonight)
+        trace.filter_stages = filter_stages
 
-        return BatchBuilder(
+        if not feasible:
+            return None, trace
+
+        batch, grouping_trace, priority_trace, build_trace = BatchBuilder(
             feasible,
             operational_units=operational_units,
             config=self.config,
             site=site,
             now=now,
-        ).build()
+        ).build_with_trace()
+        trace.grouping = grouping_trace
+        trace.priority = priority_trace
+        trace.build = build_trace
+        trace.final_plan_ids = [_plan_id(plan) for plan in batch.plans] if batch else []
+        return batch, trace
 
-    def make_predicted_batches(
+    def make_predicted_batches_with_trace(
         self,
         pending_plans: list[Plan],
         site: EarthLocation,
         start_datetime: datetime,
         operational_units: list[str] | None = None,
-    ) -> list[PredictedBatch]:
+    ) -> tuple[list[PredictedBatch], PredictedScheduleTrace]:
         observer = Observer(location=site)
         t0 = Time(start_datetime)
 
@@ -77,18 +100,17 @@ class Scheduler:
         night_start: datetime = night[0].to_datetime(timezone=UTC)
         night_end: datetime = night[1].to_datetime(timezone=UTC)
 
-        # In predictive mode all deployed units are assumed operational
         units = operational_units if operational_units is not None else []
-
         current_time = max(start_datetime.replace(tzinfo=UTC), night_start)
         completed_tonight: dict[str, int] = {}
         results: list[PredictedBatch] = []
         previous_batch: BatchData | None = None
-
-        # Simulate night by advancing a clock batch by batch
         remaining = list(pending_plans)
+        trace = PredictedScheduleTrace(night_start=night_start, night_end=night_end)
+        iteration = 0
+
         while current_time < night_end and remaining:
-            batch = self.make_immediate_batch(
+            batch, immediate_trace = self.make_immediate_batch_with_trace(
                 remaining,
                 site=site,
                 operational_units=units,
@@ -96,11 +118,24 @@ class Scheduler:
                 completed_tonight=completed_tonight,
             )
             if batch is None:
+                iteration += 1
+                trace.iterations.append(
+                    PredictedIterationTrace(
+                        iteration=iteration,
+                        batch_start=current_time,
+                        batch_end=current_time,
+                        setup_overhead_seconds=0.0,
+                        duration_seconds=0.0,
+                        immediate_trace=immediate_trace,
+                        remaining_plan_ids_after_iteration=[_plan_id(plan) for plan in remaining],
+                    )
+                )
                 break
 
+            setup_overhead = 0.0
             if previous_batch is not None:
-                overhead = _compute_setup_overhead(previous_batch, batch, self.config)
-                current_time = _advance(current_time, overhead)
+                setup_overhead = _compute_setup_overhead(previous_batch, batch, self.config)
+                current_time = _advance(current_time, setup_overhead)
                 if current_time >= night_end:
                     break
 
@@ -110,20 +145,45 @@ class Scheduler:
             pb = _to_predicted_batch(batch, current_time, batch_end, duration)
             results.append(pb)
 
-            # Update completion counts for repeats tracking
             for pid in pb.plan_ids:
                 completed_tonight[pid] = completed_tonight.get(pid, 0) + 1
 
-            # Remove exhausted "only once" plans
             used_ids = set(pb.plan_ids)
             remaining = [
                 p for p in remaining if p.ulid not in used_ids or _can_repeat(p, completed_tonight)
             ]
+            iteration += 1
+            trace.iterations.append(
+                PredictedIterationTrace(
+                    iteration=iteration,
+                    batch_start=current_time,
+                    batch_end=batch_end,
+                    setup_overhead_seconds=float(setup_overhead),
+                    duration_seconds=float(duration),
+                    immediate_trace=immediate_trace,
+                    remaining_plan_ids_after_iteration=[_plan_id(plan) for plan in remaining],
+                )
+            )
 
             previous_batch = batch
             current_time = batch_end
 
-        return results
+        return results, trace
+
+    def make_predicted_batches(
+        self,
+        pending_plans: list[Plan],
+        site: EarthLocation,
+        start_datetime: datetime,
+        operational_units: list[str] | None = None,
+    ) -> list[PredictedBatch]:
+        batches, _ = self.make_predicted_batches_with_trace(
+            pending_plans=pending_plans,
+            site=site,
+            start_datetime=start_datetime,
+            operational_units=operational_units,
+        )
+        return batches
 
 
 def _advance(dt: datetime, seconds: float) -> datetime:
@@ -185,3 +245,31 @@ def _to_predicted_batch(
         calibration_filter=spec.calibration.filter if spec and spec.calibration else None,
         allocated_units=allocated,
     )
+
+
+def _plan_trace_summary(plan: Plan) -> PlanTraceSummary:
+    from common.models.highspec import HighspecSettings
+
+    instrument = str(plan.spec_assignment.instrument) if plan.spec_assignment else None
+    settings = plan.spec_assignment.settings if plan.spec_assignment else None
+    disperser = str(settings.disperser) if isinstance(settings, HighspecSettings) else None
+    plan_name = getattr(plan, "name", None) or plan.target.name or (plan.ulid or "unknown-plan")
+    return PlanTraceSummary(
+        plan_id=_plan_id(plan),
+        name=plan_name,
+        instrument=instrument,
+        disperser=disperser,
+        target_name=plan.target.name,
+        merit=plan.merit,
+        too=bool(plan.too),
+        quorum=plan.quorum,
+        requested_exposure_seconds=plan.target.requested_exposure_duration,
+        max_exposure_seconds=plan.target.max_exposure_duration,
+        requested_num_exposures=plan.target.requested_number_of_exposures,
+        allocated_units=list(plan.allocated_units),
+        preferred_units=list(plan.allocated_units),
+    )
+
+
+def _plan_id(plan: Plan) -> str:
+    return plan.ulid or ""

@@ -191,3 +191,20 @@ class TestRepeatsNotExhausted:
         uid = plan.ulid or ""
         result = make_filter([plan]).repeats_not_exhausted({uid: 999}).plans
         assert len(result) == 1
+
+
+class TestTraceStages:
+    def test_full_chain_records_drop_reason(self):
+        plan = load_plan("time_window")
+        obs = MagicMock(spec=Observer)
+        obs.is_night.return_value = True
+        feasible, stages = make_filter(
+            [plan],
+            now=NOW_DAY,
+            observer=obs,
+        ).run_full_chain_with_trace({})
+        assert feasible == []
+        assert stages
+        time_window_stage = next(stage for stage in stages if stage.stage == "within_time_window")
+        assert len(time_window_stage.dropped) == 1
+        assert time_window_stage.dropped[0].rationales

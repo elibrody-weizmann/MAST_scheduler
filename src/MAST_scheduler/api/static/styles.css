@@ -204,6 +204,18 @@ textarea {
   margin-top: 1rem;
 }
 
+.trace-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.trace-toggle input {
+  width: auto;
+}
+
 .mock-panel {
   border: 1px solid var(--border);
   border-radius: 0.75rem;
@@ -299,6 +311,120 @@ textarea {
   font-size: 0.92rem;
 }
 
+.trace-card {
+  margin-top: 1rem;
+}
+
+.trace-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 28rem);
+  gap: 1rem;
+}
+
+.trace-timeline {
+  border-left: 2px solid var(--border);
+  display: grid;
+  gap: 0.65rem;
+  padding-left: 1rem;
+}
+
+.trace-section {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.trace-stage-card {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.55rem;
+}
+
+.trace-iteration {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: rgb(31 41 55 / 0.55);
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.75rem;
+}
+
+.trace-iteration h3 {
+  margin: 0;
+}
+
+.trace-item {
+  background: rgb(2 6 23 / 0.72);
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  color: var(--text);
+  font-size: 0.9rem;
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+}
+
+.trace-item:hover {
+  background: rgb(15 23 42 / 0.88);
+}
+
+.trace-item.stage-dropped {
+  border-color: rgb(248 113 113 / 0.45);
+}
+
+.trace-item.stage-final {
+  border-color: rgb(52 211 153 / 0.45);
+}
+
+.trace-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.trace-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+}
+
+.trace-chip.chip-kept {
+  border-color: rgb(52 211 153 / 0.45);
+  color: var(--success);
+}
+
+.trace-chip.chip-dropped {
+  border-color: rgb(248 113 113 / 0.45);
+  color: var(--danger);
+}
+
+.trace-chip.chip-input,
+.trace-chip.chip-neutral {
+  color: var(--muted);
+}
+
+.trace-plan-details {
+  border-top: 1px solid var(--border);
+  margin-top: 0.2rem;
+  padding-top: 0.2rem;
+}
+
+.trace-details {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: rgb(2 6 23 / 0.72);
+  max-height: 40rem;
+  overflow: auto;
+  padding: 0.85rem;
+}
+
+.trace-details h3 {
+  margin-top: 0;
+}
+
 @media (max-width: 820px) {
   .hero,
   .form-grid,
@@ -307,6 +433,10 @@ textarea {
   }
 
   .mock-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trace-layout {
     grid-template-columns: 1fr;
   }
 }

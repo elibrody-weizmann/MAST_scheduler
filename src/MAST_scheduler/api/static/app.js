@@ -28,6 +28,7 @@ const elements = {
   immediateNow: document.querySelector("#immediate-now"),
   predictionStart: document.querySelector("#prediction-start"),
   completedTonight: document.querySelector("#completed-tonight"),
+  includeTrace: document.querySelector("#include-trace"),
   runImmediate: document.querySelector("#run-immediate"),
   runPredict: document.querySelector("#run-predict"),
   errorMessage: document.querySelector("#error-message"),
@@ -38,6 +39,9 @@ const elements = {
   predictionSummary: document.querySelector("#prediction-summary"),
   predictionList: document.querySelector("#prediction-list"),
   predictionJson: document.querySelector("#prediction-json"),
+  traceState: document.querySelector("#trace-state"),
+  traceTimeline: document.querySelector("#trace-timeline"),
+  traceDetails: document.querySelector("#trace-details"),
 };
 
 const state = {
@@ -107,6 +111,7 @@ function buildBasePayload() {
     plan_paths: splitList(elements.planPaths.value),
     site_name: elements.siteName.value,
     operational_units: splitList(elements.operationalUnits.value),
+    include_trace: elements.includeTrace.checked,
   };
 }
 
@@ -164,6 +169,7 @@ function renderImmediate(data) {
     setState(elements.immediateState, "No batch", "");
     elements.immediateSummary.className = "empty-state";
     elements.immediateSummary.textContent = data.message || "No feasible plans.";
+    renderTrace(data.trace, "Immediate");
     return;
   }
 
@@ -179,6 +185,7 @@ function renderImmediate(data) {
     ["Exposures", batch.num_exposures],
     ["Allocated units", (batch.allocated_units ?? []).join(", ")],
   ]);
+  renderTrace(data.trace, "Immediate");
 }
 
 function renderPrediction(data) {
@@ -222,6 +229,194 @@ function renderPrediction(data) {
     note.textContent = `Showing first ${PREDICTION_BATCH_LIMIT} batches. See raw response for the full list.`;
     elements.predictionList.append(note);
   }
+  renderTrace(data.trace, "Predict");
+}
+
+function resetTrace() {
+  setState(elements.traceState, "Not requested", "");
+  elements.traceTimeline.className = "trace-timeline empty-state";
+  elements.traceTimeline.textContent =
+    "Enable trace and run immediate or prediction to inspect scheduling decisions.";
+  elements.traceDetails.className = "trace-details empty-state";
+  elements.traceDetails.textContent = "Click a trace item to inspect rationale details.";
+}
+
+function showTraceDetails(title, payload) {
+  elements.traceDetails.className = "trace-details";
+  elements.traceDetails.replaceChildren();
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const pre = document.createElement("pre");
+  pre.textContent = formatJson(payload);
+  elements.traceDetails.append(heading, pre);
+}
+
+function makeTraceChips(items) {
+  const chips = document.createElement("div");
+  chips.className = "trace-chips";
+  for (const item of items) {
+    const chip = document.createElement("span");
+    chip.className = `trace-chip ${item.className ?? ""}`.trim();
+    chip.textContent = `${item.label}: ${item.value}`;
+    chips.append(chip);
+  }
+  return chips;
+}
+
+function buildPlanListDetails(summary, ids, title) {
+  const details = document.createElement("details");
+  details.className = "trace-plan-details";
+  const summaryElement = document.createElement("summary");
+  summaryElement.textContent = `${summary} (${ids.length})`;
+  details.append(summaryElement);
+  const pre = document.createElement("pre");
+  pre.textContent = formatJson({ title, plan_ids: ids });
+  details.append(pre);
+  return details;
+}
+
+function traceButton(label, payload, className = "") {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `trace-item ${className}`.trim();
+  button.textContent = label;
+  button.addEventListener("click", () => showTraceDetails(label, payload));
+  return button;
+}
+
+function renderImmediateTrace(trace) {
+  const section = document.createElement("section");
+  section.className = "trace-section";
+  const inputPlans = trace.input_plans ?? [];
+  section.append(traceButton(`Input plans (${inputPlans.length})`, inputPlans, "stage-input"));
+
+  for (const stage of trace.filter_stages ?? []) {
+    const dropped = (stage.dropped ?? []).length;
+    const kept = (stage.kept_plan_ids ?? []).length;
+    const stageCard = document.createElement("article");
+    stageCard.className = "trace-stage-card";
+    stageCard.append(
+      traceButton(
+        stage.label,
+        stage,
+        dropped > 0 ? "stage-dropped" : "stage-kept",
+      ),
+      makeTraceChips([
+        { label: "Input", value: (stage.input_plan_ids ?? []).length, className: "chip-input" },
+        { label: "Kept", value: kept, className: "chip-kept" },
+        { label: "Dropped", value: dropped, className: dropped ? "chip-dropped" : "chip-neutral" },
+      ]),
+      buildPlanListDetails("Kept plan IDs", stage.kept_plan_ids ?? [], "kept_plan_ids"),
+      buildPlanListDetails(
+        "Dropped plan IDs",
+        (stage.dropped ?? []).map((entry) => entry.plan_id),
+        "dropped_plan_ids",
+      ),
+    );
+    section.append(stageCard);
+  }
+  if (trace.grouping) {
+    const groupedPlanCount = (trace.grouping.groups ?? []).reduce(
+      (acc, group) => acc + (group.plan_ids ?? []).length,
+      0,
+    );
+    section.append(
+      traceButton(
+        `Grouping (${(trace.grouping.groups ?? []).length} groups, ${groupedPlanCount} plans)`,
+        trace.grouping,
+        "stage-grouping",
+      ),
+    );
+  }
+  if (trace.priority) {
+    section.append(
+      traceButton(
+        `Priority (${(trace.priority.ranked_groups ?? []).length} ranked groups)`,
+        trace.priority,
+        "stage-priority",
+      ),
+    );
+  }
+  if (trace.build) {
+    const buildLabel = trace.build.final_batch_ulid
+      ? `Batch build (${trace.build.final_batch_ulid})`
+      : "Batch build";
+    section.append(traceButton(buildLabel, trace.build, "stage-build"));
+  }
+  section.append(
+    traceButton(
+      `Final plans (${(trace.final_plan_ids ?? []).length})`,
+      trace.final_plan_ids ?? [],
+      "stage-final",
+    ),
+  );
+  return section;
+}
+
+function renderPredictedTrace(trace) {
+  const wrapper = document.createElement("section");
+  wrapper.className = "trace-section";
+  if (!(trace.iterations ?? []).length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "No predictive iterations were produced for this run.";
+    wrapper.append(empty);
+    return wrapper;
+  }
+  for (const iteration of trace.iterations ?? []) {
+    const block = document.createElement("article");
+    block.className = "trace-iteration";
+    const title = document.createElement("h3");
+    title.textContent = `Iteration ${iteration.iteration}`;
+    block.append(title);
+    block.append(
+      traceButton(
+        `Window ${formatDateTime(iteration.batch_start)} - ${formatDateTime(iteration.batch_end)}`,
+        iteration,
+      ),
+    );
+    block.append(
+      makeTraceChips([
+        {
+          label: "Setup overhead",
+          value: `${Math.round(Number(iteration.setup_overhead_seconds ?? 0))}s`,
+          className: "chip-input",
+        },
+        {
+          label: "Batch duration",
+          value: `${Math.round(Number(iteration.duration_seconds ?? 0))}s`,
+          className: "chip-kept",
+        },
+        {
+          label: "Remaining plans",
+          value: (iteration.remaining_plan_ids_after_iteration ?? []).length,
+          className: "chip-neutral",
+        },
+      ]),
+    );
+    block.append(renderImmediateTrace(iteration.immediate_trace ?? {}));
+    wrapper.append(block);
+  }
+  return wrapper;
+}
+
+function renderTrace(trace, modeLabel) {
+  if (!trace) {
+    resetTrace();
+    return;
+  }
+
+  setState(elements.traceState, `${modeLabel} trace`, "success");
+  elements.traceTimeline.className = "trace-timeline";
+  elements.traceTimeline.replaceChildren();
+  elements.traceDetails.className = "trace-details empty-state";
+  elements.traceDetails.textContent = "Click a trace item to inspect rationale details.";
+
+  if (trace.iterations) {
+    elements.traceTimeline.append(renderPredictedTrace(trace));
+    return;
+  }
+  elements.traceTimeline.append(renderImmediateTrace(trace));
 }
 
 function renderMockSummary(data) {
@@ -356,4 +551,5 @@ elements.generateMockPlans.addEventListener("click", generateMockPlans);
 
 setDefaultPredictionStart();
 elements.completedTonight.value = EMPTY_JSON;
+resetTrace();
 refreshStatus();

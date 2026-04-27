@@ -206,3 +206,20 @@ class TestConditionScore:
                 score_low = _condition_score([plan], WIS_LOCATION, NOW_NIGHT, config)
 
         assert score_high > score_low
+
+
+class TestTraceBuilder:
+    def test_build_with_trace_includes_grouping_and_priority(self):
+        minimal = load_plan("minimal")
+        highspec = load_plan("highspec")
+        batch, grouping, priority, build_trace = BatchBuilder(
+            [minimal, highspec],
+            operational_units=["mast01", "mast02"],
+            config=SchedulerConfig(),
+            site=WIS_LOCATION,
+            now=NOW_NIGHT,
+        ).build_with_trace()
+        assert batch is not None
+        assert grouping.groups
+        assert priority.ranked_groups
+        assert build_trace.final_plan_ids

@@ -128,6 +128,10 @@
         </div>
 
         <div class="actions">
+          <label class="trace-toggle" for="include-trace">
+            <input id="include-trace" type="checkbox" />
+            <span>Include scheduler trace</span>
+          </label>
           <button id="run-immediate" type="button">Run immediate batch</button>
           <button id="run-predict" type="button">Predict night</button>
         </div>
@@ -166,6 +170,24 @@
             <pre id="prediction-json">{}</pre>
           </details>
         </article>
+      </section>
+
+      <section class="card trace-card" aria-labelledby="trace-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Observability</p>
+            <h2 id="trace-heading">Scheduler trace</h2>
+          </div>
+          <span id="trace-state" class="pill">Not requested</span>
+        </div>
+        <div class="trace-layout">
+          <div id="trace-timeline" class="trace-timeline empty-state">
+            Enable trace and run immediate or prediction to inspect scheduling decisions.
+          </div>
+          <aside id="trace-details" class="trace-details empty-state">
+            Click a trace item to inspect rationale details.
+          </aside>
+        </div>
       </section>
     </main>
 
