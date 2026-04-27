@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
+from astroplan import Observer
 
 from common.models.batches import BatchData
 
-from MAST_scheduler.builder import BatchBuilder
+from MAST_scheduler.builder import BatchBuilder, _condition_score
 from MAST_scheduler.config import SchedulerConfig
 
-from .conftest import load_plan
+from .conftest import NOW_NIGHT, WIS_LOCATION, load_plan
 
 
 @pytest.fixture
@@ -20,11 +23,13 @@ def units() -> list[str]:
     return ["mast01", "mast02", "mast03"]
 
 
-def build(plans, units=None, config=None) -> BatchData | None:
+def build(plans, units=None, config=None, site=None, now=None) -> BatchData | None:
     return BatchBuilder(
         plans,
         operational_units=units or ["mast01", "mast02", "mast03"],
         config=config or SchedulerConfig(),
+        site=site,
+        now=now,
     ).build()
 
 
@@ -124,3 +129,76 @@ class TestEdgeCases:
         plan = load_plan("minimal")
         plan.spec_assignment = None
         assert build([plan]) is None
+
+
+class TestConditionScore:
+    def _mock_observer_and_coord(self, alt_deg: float, sep_deg: float):
+        obs = MagicMock(spec=Observer)
+        moon_altaz = MagicMock()
+        moon_altaz.alt = MagicMock()
+        moon_altaz.az = MagicMock()
+        moon_altaz.frame = MagicMock()
+        obs.moon_altaz.return_value = moon_altaz
+
+        target = MagicMock()
+        target.transform_to.return_value = MagicMock(alt=MagicMock(deg=alt_deg))
+        target.separation.return_value = MagicMock(deg=sep_deg)
+        return obs, target
+
+    def test_score_in_range(self):
+        plan = load_plan("minimal")
+        obs, target = self._mock_observer_and_coord(45.0, 90.0)
+        with patch("MAST_scheduler.builder._plan_skycoord", return_value=target):
+            with patch("MAST_scheduler.builder.Observer", return_value=obs):
+                score = _condition_score([plan], WIS_LOCATION, NOW_NIGHT, SchedulerConfig())
+        assert 0.0 <= score <= 1.0
+
+    def test_score_neutral_urgency_when_no_time_window(self):
+        plan = load_plan("minimal")  # no time_window constraint
+        obs, target = self._mock_observer_and_coord(60.0, 120.0)
+        with patch("MAST_scheduler.builder._plan_skycoord", return_value=target):
+            with patch("MAST_scheduler.builder.Observer", return_value=obs):
+                score = _condition_score([plan], WIS_LOCATION, NOW_NIGHT, SchedulerConfig())
+        # urgency defaults to 0.5; score should be non-zero and valid
+        assert 0.0 < score <= 1.0
+
+    def test_builder_uses_condition_score_to_break_ties(self):
+        # Two deepspec plans in the same group; score doesn't split them but builder should not crash
+        plan_a = load_plan("minimal")
+        plan_b = load_plan("airmass")
+        obs, target = self._mock_observer_and_coord(50.0, 80.0)
+        with patch("MAST_scheduler.builder._plan_skycoord", return_value=target):
+            with patch("MAST_scheduler.builder.Observer", return_value=obs):
+                batch = build([plan_a, plan_b], site=WIS_LOCATION, now=NOW_NIGHT)
+        assert batch is not None
+
+    def test_builder_works_without_site_and_now(self):
+        # Condition score gracefully absent when site/now not provided
+        batch = build([load_plan("minimal")], site=None, now=None)
+        assert batch is not None
+
+    def test_high_altitude_scores_better_than_low(self):
+        plan = load_plan("minimal")
+        obs_high = MagicMock(spec=Observer)
+        moon_altaz = MagicMock()
+        moon_altaz.alt = MagicMock()
+        moon_altaz.az = MagicMock()
+        moon_altaz.frame = MagicMock()
+        obs_high.moon_altaz.return_value = moon_altaz
+
+        target_high = MagicMock()
+        target_high.transform_to.return_value = MagicMock(alt=MagicMock(deg=80.0))
+        target_high.separation.return_value = MagicMock(deg=90.0)
+
+        target_low = MagicMock()
+        target_low.transform_to.return_value = MagicMock(alt=MagicMock(deg=20.0))
+        target_low.separation.return_value = MagicMock(deg=90.0)
+
+        config = SchedulerConfig()
+        with patch("MAST_scheduler.builder.Observer", return_value=obs_high):
+            with patch("MAST_scheduler.builder._plan_skycoord", return_value=target_high):
+                score_high = _condition_score([plan], WIS_LOCATION, NOW_NIGHT, config)
+            with patch("MAST_scheduler.builder._plan_skycoord", return_value=target_low):
+                score_low = _condition_score([plan], WIS_LOCATION, NOW_NIGHT, config)
+
+        assert score_high > score_low

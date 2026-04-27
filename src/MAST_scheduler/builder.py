@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import math
+from datetime import datetime
+
 from ulid import ULID
+
+import astropy.units as u
+from astropy.coordinates import AltAz, EarthLocation
+from astropy.time import Time
+from astroplan import Observer
 
 from common.models.batches import BatchData
 from common.models.calibration import CalibrationSettings
@@ -9,6 +17,7 @@ from common.models.plans import Plan
 from common.models.spectrographs import SpectrographModel
 
 from .config import SchedulerConfig
+from .filters import _plan_skycoord, _to_datetime
 
 # Priority order for ND calibration filters — higher index = denser
 _ND_ORDER = ["ND1000", "ND2000", "ND4000"]
@@ -26,15 +35,103 @@ def _group_key(plan: Plan) -> tuple[str, str | None]:
     return (instrument, _disperser(plan))
 
 
-def _group_priority(group: list[Plan]) -> tuple[bool, int, float]:
-    """Returns a sort key for a group (higher = better priority).
+def _group_lamp_on(group: list[Plan]) -> bool:
+    return any(
+        p.spec_assignment.calibration.lamp_on
+        for p in group
+        if p.spec_assignment and p.spec_assignment.calibration
+    )
 
-    Key: (has_too, max_merit, negotiated_exposure_time) — all maximised.
+
+def _compute_setup_overhead(
+    previous: BatchData,
+    next_batch: BatchData,
+    config: SchedulerConfig,
+) -> float:
+    """Return inter-batch setup cost in seconds."""
+    overhead = 0.0
+
+    prev_instrument = str(previous.spec_assignment.instrument) if previous.spec_assignment else ""
+    next_instrument = str(next_batch.spec_assignment.instrument) if next_batch.spec_assignment else ""
+
+    if prev_instrument != next_instrument:
+        overhead += config.spectrograph_switch_time
+
+    if next_instrument == "highspec":
+        ns = next_batch.spec_assignment.settings if next_batch.spec_assignment else None
+        next_disperser = str(ns.disperser) if isinstance(ns, HighspecSettings) else None
+        ps = previous.spec_assignment.settings if previous.spec_assignment else None
+        prev_disperser: str | None = str(ps.disperser) if isinstance(ps, HighspecSettings) else None
+        if prev_disperser is not None and next_disperser is not None and prev_disperser != next_disperser:
+            overhead += config.grating_stage_move_time
+
+    prev_lamp = bool(previous.spec_assignment.calibration.lamp_on) if previous.spec_assignment and previous.spec_assignment.calibration else False
+    next_lamp = bool(next_batch.spec_assignment.calibration.lamp_on) if next_batch.spec_assignment and next_batch.spec_assignment.calibration else False
+    if not prev_lamp and next_lamp:
+        overhead += config.lamp_warmup_time
+    elif prev_lamp and not next_lamp:
+        overhead += config.lamp_cooldown_time
+
+    return overhead
+
+
+def _condition_score(
+    group: list[Plan],
+    site: EarthLocation,
+    now: datetime,
+    config: SchedulerConfig,
+) -> float:
+    """[0, 1] soft-rank score averaging airmass, moon separation, and urgency sub-scores."""
+    astropy_time = Time(now)
+    altaz_frame = AltAz(obstime=astropy_time, location=site)
+    observer = Observer(location=site)
+    moon_sky = observer.moon_altaz(astropy_time)
+
+    scores: list[float] = []
+    for plan in group:
+        sub: list[float] = []
+
+        coord = _plan_skycoord(plan)
+        alt_deg = coord.transform_to(altaz_frame).alt.deg
+        if alt_deg > 0:
+            airmass = 1.0 / math.sin(math.radians(alt_deg))
+            max_am = (plan.constraints.airmass.max if plan.constraints and plan.constraints.airmass and plan.constraints.airmass.max else 3.0)
+            sub.append(max(0.0, 1.0 - (airmass - 1.0) / (max_am - 1.0)))
+        else:
+            sub.append(0.0)
+
+        sub.append(min(coord.separation(moon_sky).deg / 180.0, 1.0))
+
+        if plan.constraints and plan.constraints.time_window:
+            tw = plan.constraints.time_window
+            start_dt = _to_datetime(tw.start) if tw.start else now
+            end_dt = _to_datetime(tw.end) if tw.end else now
+            total = (end_dt - start_dt).total_seconds()
+            remaining = (end_dt - now).total_seconds()
+            sub.append(max(0.0, min(remaining / total, 1.0)) if total > 0 else 0.5)
+        else:
+            sub.append(0.5)
+
+        scores.append(sum(sub) / 3)
+
+    return sum(scores) / len(scores) if scores else 0.0
+
+
+def _group_priority(
+    group: list[Plan],
+    site: EarthLocation | None = None,
+    now: datetime | None = None,
+    config: SchedulerConfig | None = None,
+) -> tuple[bool, int, float, float]:
+    """Returns a sort key (higher = better priority).
+
+    Key: (has_too, max_merit, negotiated_exposure_time, condition_score) — all maximised.
     """
     has_too = any(p.too for p in group)
     max_merit = max((p.merit or 1) for p in group)
-    exposure = _negotiate_exposure(group)
-    return (has_too, max_merit, exposure if exposure is not None else 0.0)
+    exposure = _negotiate_exposure(group) or 0.0
+    cond = _condition_score(group, site, now, config) if site is not None and now is not None and config is not None else 0.0
+    return (has_too, max_merit, exposure, cond)
 
 
 def _negotiate_exposure(plans: list[Plan]) -> float | None:
@@ -74,10 +171,14 @@ class BatchBuilder:
         *,
         operational_units: list[str],
         config: SchedulerConfig,
+        site: EarthLocation | None = None,
+        now: datetime | None = None,
     ) -> None:
         self._plans = plans
         self._operational_units = operational_units
         self._config = config
+        self._site = site
+        self._now = now
 
     def build(self) -> BatchData | None:
         if not self._plans:
@@ -92,7 +193,11 @@ class BatchBuilder:
             key = _group_key(plan)
             groups.setdefault(key, []).append(plan)
 
-        sorted_groups = sorted(groups.values(), key=_group_priority, reverse=True)
+        sorted_groups = sorted(
+            groups.values(),
+            key=lambda g: _group_priority(g, self._site, self._now, self._config),
+            reverse=True,
+        )
 
         for group in sorted_groups:
             batch_exp = _negotiate_exposure(group)

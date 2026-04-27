@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -93,6 +93,96 @@ class TestPredictedBatches:
                     )
 
         assert isinstance(result, list)
+
+
+class TestPredictedSetupOverhead:
+    """Verify that inter-batch setup overhead appears in predicted schedules."""
+
+    def _make_obs_mock(self, night_start: datetime, night_end: datetime) -> MagicMock:
+        obs = MagicMock(spec=Observer)
+        obs.is_night.return_value = True
+        obs.moon_illumination.return_value = 0.05
+        moon_altaz = MagicMock()
+        moon_altaz.alt = MagicMock()
+        moon_altaz.az = MagicMock()
+        moon_altaz.frame = MagicMock()
+        obs.moon_altaz.return_value = moon_altaz
+        obs.tonight.return_value = (
+            MagicMock(to_datetime=lambda timezone: night_start),
+            MagicMock(to_datetime=lambda timezone: night_end),
+        )
+        return obs
+
+    def test_overhead_inserted_between_different_instrument_batches(self):
+        """When two plans use different instruments, predicted_start of the second
+        batch must be strictly later than predicted_end of the first by at least
+        spectrograph_switch_time."""
+        config = SchedulerConfig()
+        scheduler = Scheduler(config=config)
+        night_start = datetime(2026, 4, 27, 19, 0, tzinfo=timezone.utc)
+        # Long night so both batches fit
+        night_end = datetime(2026, 4, 28, 6, 0, tzinfo=timezone.utc)
+
+        deepspec_plan = load_plan("minimal")     # deepspec, merit 5, once per night
+        highspec_plan = load_plan("highspec")    # highspec, merit 8, once per night
+        # highspec has higher merit → wins first batch; deepspec second
+        plans = [deepspec_plan, highspec_plan]
+
+        obs = self._make_obs_mock(night_start, night_end)
+
+        with patch("MAST_scheduler.filters._plan_skycoord") as mock_coord:
+            target = MagicMock()
+            target.transform_to.return_value = MagicMock(alt=MagicMock(deg=60.0))
+            target.separation.return_value = MagicMock(deg=90.0)
+            mock_coord.return_value = target
+            with patch("MAST_scheduler.builder._plan_skycoord", return_value=target):
+                with patch("MAST_scheduler.builder.Observer", return_value=obs):
+                    with patch("MAST_scheduler.filters.Observer", return_value=obs):
+                        with patch("MAST_scheduler.scheduler.Observer", return_value=obs):
+                            result = scheduler.make_predicted_batches(
+                                plans,
+                                site=WIS_LOCATION,
+                                start_datetime=night_start,
+                                operational_units=["mast01", "mast02"],
+                            )
+
+        assert len(result) == 2, f"Expected 2 predicted batches, got {len(result)}"
+        gap = result[1].predicted_start - result[0].predicted_end
+        assert gap >= timedelta(seconds=config.spectrograph_switch_time), (
+            f"Gap {gap.total_seconds()}s < spectrograph_switch_time {config.spectrograph_switch_time}s"
+        )
+
+    def test_no_overhead_between_same_instrument_batches(self):
+        """Two deepspec plans (once per night each) that run in the same group
+        produce exactly one batch, so no overhead is expected."""
+        config = SchedulerConfig()
+        scheduler = Scheduler(config=config)
+        night_start = datetime(2026, 4, 27, 19, 0, tzinfo=timezone.utc)
+        night_end = datetime(2026, 4, 28, 6, 0, tzinfo=timezone.utc)
+
+        plan_a = load_plan("minimal")    # deepspec, once per night
+        plan_b = load_plan("airmass")   # deepspec, once per night
+
+        obs = self._make_obs_mock(night_start, night_end)
+
+        with patch("MAST_scheduler.filters._plan_skycoord") as mock_coord:
+            target = MagicMock()
+            target.transform_to.return_value = MagicMock(alt=MagicMock(deg=60.0))
+            target.separation.return_value = MagicMock(deg=90.0)
+            mock_coord.return_value = target
+            with patch("MAST_scheduler.builder._plan_skycoord", return_value=target):
+                with patch("MAST_scheduler.builder.Observer", return_value=obs):
+                    with patch("MAST_scheduler.filters.Observer", return_value=obs):
+                        with patch("MAST_scheduler.scheduler.Observer", return_value=obs):
+                            result = scheduler.make_predicted_batches(
+                                [plan_a, plan_b],
+                                site=WIS_LOCATION,
+                                start_datetime=night_start,
+                                operational_units=["mast01", "mast02"],
+                            )
+
+        # Both are deepspec "once per night" → they go in one batch, loop ends
+        assert len(result) == 1
 
 
 class TestAPI:

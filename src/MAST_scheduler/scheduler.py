@@ -11,7 +11,7 @@ from astroplan import Observer
 from common.models.batches import BatchData
 from common.models.plans import Plan
 
-from .builder import BatchBuilder
+from .builder import BatchBuilder, _compute_setup_overhead
 from .config import SchedulerConfig
 from .filters import PlanFilter
 from .models import PredictedBatch
@@ -60,6 +60,8 @@ class Scheduler:
             feasible,
             operational_units=operational_units,
             config=self.config,
+            site=site,
+            now=now,
         ).build()
 
     def make_predicted_batches(
@@ -82,6 +84,7 @@ class Scheduler:
         current_time = max(start_datetime.replace(tzinfo=timezone.utc), night_start)
         completed_tonight: dict[str, int] = {}
         results: list[PredictedBatch] = []
+        previous_batch: BatchData | None = None
 
         # Simulate night by advancing a clock batch by batch
         remaining = list(pending_plans)
@@ -95,6 +98,12 @@ class Scheduler:
             )
             if batch is None:
                 break
+
+            if previous_batch is not None:
+                overhead = _compute_setup_overhead(previous_batch, batch, self.config)
+                current_time = _advance(current_time, overhead)
+                if current_time >= night_end:
+                    break
 
             duration = batch.predicted_duration or 0.0
             batch_end = _advance(current_time, duration)
@@ -110,6 +119,7 @@ class Scheduler:
             used_ids = set(pb.plan_ids)
             remaining = [p for p in remaining if p.ulid not in used_ids or _can_repeat(p, completed_tonight)]
 
+            previous_batch = batch
             current_time = batch_end
 
         return results

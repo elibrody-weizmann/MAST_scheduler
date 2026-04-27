@@ -14,6 +14,8 @@ class SchedulerConfig(BaseModel):
     too_operator_timeout: float = 30.0
     poll_interval: float = 30.0
     twilight_type: str = "astronomical"  # astronomical | nautical | civil
+    spectrograph_switch_time: float = 120.0
+    grating_stage_move_time: float = 30.0
 
     @classmethod
     def load(cls, path: Path | None = None) -> SchedulerConfig:
