@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+from common.models.batches import BatchData
+
 from MAST_scheduler.builder import BatchBuilder
 from MAST_scheduler.config import SchedulerConfig
-from MAST_scheduler.models import ScheduledBatch
 
 from .conftest import load_plan
 
@@ -19,7 +20,7 @@ def units() -> list[str]:
     return ["mast01", "mast02", "mast03"]
 
 
-def build(plans, units=None, config=None) -> ScheduledBatch | None:
+def build(plans, units=None, config=None) -> BatchData | None:
     return BatchBuilder(
         plans,
         operational_units=units or ["mast01", "mast02", "mast03"],

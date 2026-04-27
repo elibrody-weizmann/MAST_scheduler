@@ -1,24 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict
-
-
-class ScheduledBatch(BaseModel):
-    """Builder output — mirrors the relevant fields of common.models.batches.Batch
-    without inheriting Activities, which is incompatible with Pydantic v2."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    ulid: str
-    immediate: bool = True
-    plans: list[Any]
-    spec_assignment: Any | None = None
-    predicted_duration: float | None = None
-    exposure_duration: float = 0.0
-    number_of_exposures: int = 1
+from pydantic import BaseModel
 
 
 class PredictedBatch(BaseModel):

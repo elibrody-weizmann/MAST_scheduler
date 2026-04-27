@@ -19,8 +19,8 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
-      - ../MAST/MAST_common:/mast_deps/common
-      - ../MAST/MAST_common:/mast_deps/MAST_common
+      - ../MAST_common:/mast_deps/common
+      - ../MAST_common:/mast_deps/MAST_common
     command: uvicorn MAST_scheduler.api.app:app --host 0.0.0.0 --port 8000 --reload
 
   test:
@@ -31,7 +31,7 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
-      - ../MAST/MAST_common:/mast_deps/common
-      - ../MAST/MAST_common:/mast_deps/MAST_common
+      - ../MAST_common:/mast_deps/common
+      - ../MAST_common:/mast_deps/MAST_common
     command: pytest -v
     profiles: [test]

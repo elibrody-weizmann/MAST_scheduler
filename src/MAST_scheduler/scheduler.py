@@ -8,12 +8,13 @@ from astropy.coordinates import EarthLocation
 from astropy.time import Time
 from astroplan import Observer
 
+from common.models.batches import BatchData
 from common.models.plans import Plan
 
 from .builder import BatchBuilder
 from .config import SchedulerConfig
 from .filters import PlanFilter
-from .models import PredictedBatch, ScheduledBatch
+from .models import PredictedBatch
 
 if TYPE_CHECKING:
     pass
@@ -30,7 +31,7 @@ class Scheduler:
         operational_units: list[str],
         now: datetime | None = None,
         completed_tonight: dict[str, int] | None = None,
-    ) -> ScheduledBatch | None:
+    ) -> BatchData | None:
         if now is None:
             now = datetime.now(tz=timezone.utc)
 
@@ -135,7 +136,7 @@ def _can_repeat(plan: Plan, completed: dict[str, int]) -> bool:
 
 
 def _to_predicted_batch(
-    batch: ScheduledBatch,
+    batch: BatchData,
     start: datetime,
     end: datetime,
     duration: float,
@@ -154,7 +155,7 @@ def _to_predicted_batch(
         allocated.extend(u for u in plan.allocated_units if u not in allocated)
 
     return PredictedBatch(
-        ulid=batch.ulid,
+        ulid=str(batch.ulid) if batch.ulid else "",
         predicted_start=start,
         predicted_end=end,
         predicted_duration_seconds=duration,

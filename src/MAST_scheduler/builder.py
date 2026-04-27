@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from ulid import ULID
 
+from common.models.batches import BatchData
 from common.models.calibration import CalibrationSettings
 from common.models.highspec import HighspecSettings
 from common.models.plans import Plan
 from common.models.spectrographs import SpectrographModel
 
 from .config import SchedulerConfig
-from .models import ScheduledBatch
 
 # Priority order for ND calibration filters — higher index = denser
 _ND_ORDER = ["ND1000", "ND2000", "ND4000"]
@@ -79,7 +79,7 @@ class BatchBuilder:
         self._operational_units = operational_units
         self._config = config
 
-    def build(self) -> ScheduledBatch | None:
+    def build(self) -> BatchData | None:
         if not self._plans:
             return None
 
@@ -111,7 +111,7 @@ class BatchBuilder:
         return None
 
 
-def _make_scheduled_batch(plans: list[Plan], batch_exp: float, config: SchedulerConfig) -> ScheduledBatch:
+def _make_scheduled_batch(plans: list[Plan], batch_exp: float, config: SchedulerConfig) -> BatchData:
     autofocus_duration = config.autofocus_time if any(p.autofocus for p in plans) else 0.0
     max_timeout = max((p.timeout_to_guiding or 0) for p in plans)
 
@@ -144,8 +144,8 @@ def _make_scheduled_batch(plans: list[Plan], batch_exp: float, config: Scheduler
         settings=plans[0].spec_assignment.settings if plans[0].spec_assignment else None,
     )
 
-    return ScheduledBatch(
-        ulid=str(ULID()),
+    return BatchData(
+        ulid=ULID(),
         immediate=True,
         plans=plans,
         spec_assignment=spec_assignment,
