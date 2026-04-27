@@ -86,6 +86,7 @@ class BatchBuildTrace(BaseModel):
     selected_group_id: str | None = None
     negotiated_exposure_seconds: float | None = None
     dropped_by_exposure_cap: list[DroppedPlanTrace] = Field(default_factory=list)
+    dropped_by_missing_requested_exposure: list[DroppedPlanTrace] = Field(default_factory=list)
     viable_plan_ids: list[str] = Field(default_factory=list)
     allocated_units_by_plan: dict[str, list[str]] = Field(default_factory=dict)
     final_plan_ids: list[str] = Field(default_factory=list)

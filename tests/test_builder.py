@@ -247,3 +247,23 @@ class TestTraceBuilder:
         assert base.ulid in all_group_plan_ids
         assert sensitive.ulid in all_group_plan_ids
         assert not build_trace.dropped_by_exposure_cap
+
+    def test_build_trace_surfaces_missing_requested_exposure(self):
+        missing_exposure = load_plan("minimal")
+        missing_exposure.target.requested_exposure_duration = None
+
+        batch, _, _, build_trace = BatchBuilder(
+            [missing_exposure],
+            operational_units=["mast01"],
+            config=SchedulerConfig(),
+            site=WIS_LOCATION,
+            now=NOW_NIGHT,
+        ).build_with_trace()
+
+        assert batch is None
+        assert build_trace.dropped_by_missing_requested_exposure
+        assert build_trace.dropped_by_missing_requested_exposure[0].plan_id == missing_exposure.ulid
+        assert (
+            build_trace.dropped_by_missing_requested_exposure[0].rationales[0].code
+            == "requested_exposure_missing"
+        )

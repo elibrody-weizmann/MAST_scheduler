@@ -2,6 +2,43 @@
 
 Isolated Python library and FastAPI service implementing the MAST observation scheduler. It is the decision layer between "pending plans exist" and "start this batch" — no hardware calls, no dependency on MAST_control.
 
+## Prerequisites
+
+- Docker Engine/Desktop running
+- Docker Compose v2 available (`docker compose`)
+
+## Quick Start
+
+### Linux/macOS
+
+```bash
+# 1) Run the API
+docker compose up scheduler
+
+# 2) Open the UI
+# http://127.0.0.1:8000/
+
+# 3) Run tests (authoritative runtime check)
+docker compose --profile test run --rm test
+```
+
+### Windows (PowerShell)
+
+```powershell
+# 1) Run the API
+docker compose up scheduler
+
+# 2) Open the UI
+# http://127.0.0.1:8000/
+
+# 3) Run tests (authoritative runtime check)
+docker compose --profile test run --rm test
+```
+
+Notes:
+- Run commands from the `MAST_scheduler` repository root.
+- Docker Desktop/Engine must be running before executing API/test commands.
+
 ## What it does
 
 Given a list of pending `Plan` objects, a telescope site, and a set of operational units, the scheduler:
@@ -27,16 +64,13 @@ src/MAST_scheduler/
 
 ## Setup
 
-```bash
-uv sync --all-extras
-```
-
 MAST_common is installed as an editable path dependency from `../MAST/MAST_common`.
+No host-side Python setup is required for normal API operation or test execution.
 
 ## Running
 
 ```bash
-uv run uvicorn MAST_scheduler.api.app:app --reload
+docker compose up scheduler
 ```
 
 Open <http://127.0.0.1:8000/> for the lightweight scheduler UI.
@@ -192,20 +226,7 @@ Tests run inside Docker (MAST_common is volume-mounted):
 docker compose --profile test run --rm test
 ```
 
-Linting and formatting run on the host:
-
-```bash
-uv run ruff check src/ tests/
-uv run ruff format src/ tests/
-```
-
-Enable automatic Ruff checks on every commit:
-
-```bash
-uv run pre-commit install
-```
-
-Project `.vscode/settings.json` also enables Ruff lint/fix on save in Cursor/VS Code.
+Use Docker-based workflows for runtime and validation operations in this repository.
 
 ### Test coverage
 

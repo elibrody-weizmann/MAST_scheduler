@@ -415,6 +415,7 @@ function collectRationaleEntries(payload) {
     payload?.dropped,
     payload?.excluded,
     payload?.dropped_by_exposure_cap,
+    payload?.dropped_by_missing_requested_exposure,
   ].filter(Array.isArray);
   for (const droppedList of droppedCollections) {
     for (const droppedItem of droppedList) {

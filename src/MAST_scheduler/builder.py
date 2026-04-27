@@ -333,6 +333,20 @@ class BatchBuilder:
             build_trace.selected_group_id = _group_id(key)
             batch_exp = _negotiate_exposure(group)
             if batch_exp is None:
+                build_trace.dropped_by_missing_requested_exposure.extend(
+                    [
+                        DroppedPlanTrace(
+                            plan_id=_plan_id(plan),
+                            rationales=[
+                                TraceRationale(
+                                    code="requested_exposure_missing",
+                                    message="Plan missing requested exposure duration",
+                                )
+                            ],
+                        )
+                        for plan in group
+                    ]
+                )
                 continue
             build_trace.negotiated_exposure_seconds = float(batch_exp)
 
