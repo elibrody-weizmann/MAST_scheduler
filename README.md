@@ -22,7 +22,7 @@ src/MAST_scheduler/
 ├── models.py      — PredictedBatch and API request/response models
 └── api/
     ├── app.py     — FastAPI application with lifespan
-    └── routes.py  — /scheduler/immediate, /predict, /status
+    └── routes.py  — immediate/predict (path + inline), mock generator, status
 ```
 
 ## Setup
@@ -47,12 +47,17 @@ The FastAPI app serves a dependency-free web interface at `/`. It lets operators
 
 - Check scheduler service health and active configuration
 - Enter plan TOML paths, site, operational units, and scheduling times
+- Generate deterministic mock plans at scale with configurable presets and seed
+- Run immediate/predictive scheduling against either file-path plans or inline generated plans
 - Run the immediate scheduler and inspect the selected batch
 - Predict the night and inspect the ordered batch timeline
 
 Plan paths entered in the UI must be readable by the FastAPI process. The UI does
 not upload plan files; it submits paths to the same API contract used by direct
 HTTP clients.
+
+For generated plans, the UI keeps plans in memory and sends them directly to
+inline API endpoints, so large mock sets do not require writing plan files.
 
 ## API
 
@@ -72,6 +77,21 @@ Returns the next batch to run right now.
 
 Response includes the `BatchData` dict and `feasible_plan_count`.
 
+### `POST /scheduler/immediate/inline`
+
+Same behavior as `/scheduler/immediate`, but accepts inline `plans` payloads
+instead of `plan_paths`.
+
+```json
+{
+  "plans": [{ "...": "Plan-shaped payload" }],
+  "operational_units": ["mast01", "mast02"],
+  "site_name": "ns",
+  "now": "2026-04-27T01:00:00Z",
+  "completed_tonight": {}
+}
+```
+
 ### `POST /scheduler/predict`
 
 Simulates the rest of the night and returns an ordered list of `PredictedBatch` objects with start/end times.
@@ -84,6 +104,44 @@ Simulates the rest of the night and returns an ordered list of `PredictedBatch` 
   "operational_units": ["mast01", "mast02", "mast03"]
 }
 ```
+
+### `POST /scheduler/predict/inline`
+
+Same behavior as `/scheduler/predict`, but accepts inline `plans` payloads
+instead of `plan_paths`.
+
+```json
+{
+  "plans": [{ "...": "Plan-shaped payload" }],
+  "start_datetime": "2026-04-27T19:00:00Z",
+  "site_name": "ns",
+  "operational_units": ["mast01", "mast02", "mast03"]
+}
+```
+
+### `POST /scheduler/mock-plans/generate`
+
+Generates deterministic mock plans and summary stats for static UI or API clients.
+
+```json
+{
+  "count": 200,
+  "seed": 42,
+  "preset": "balanced"
+}
+```
+
+Supported presets:
+
+- `balanced`
+- `constraints-heavy`
+- `highspec-heavy`
+- `quorum-stress`
+- `repeat-stress`
+
+The request also supports additional knobs (`instruments`, `repeat_modes`,
+`merit_range`, `quorum_range`, `exposure_range_seconds`, `too_fraction`,
+constraint toggles, and allocation pool) for targeted scheduler stress scenarios.
 
 ### `GET /scheduler/status`
 

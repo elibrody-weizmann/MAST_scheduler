@@ -12,6 +12,12 @@ Implements the decision layer between "pending plans exist" and "start this batc
 
 No hardware calls. No dependency on MAST_control.
 
+## Execution policy
+
+- **Always use Docker for this project** when running the API and tests. Do not rely on host Python execution for runtime behavior validation.
+- Use `docker compose up scheduler` for the service and `docker compose --profile test run --rm test` for test runs.
+- Host execution is only for local lint/format convenience (`ruff`), not for authoritative runtime checks.
+
 ## Setup
 
 ```bash

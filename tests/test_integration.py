@@ -245,3 +245,88 @@ class TestAPI:
                 },
             )
         assert response.status_code == 422
+
+    def test_generate_mock_plans_endpoint(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/mock-plans/generate",
+                json={"count": 5, "seed": 11, "preset": "balanced"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["plans"]) == 5
+        assert data["summary"]["generated_count"] == 5
+
+    def test_generate_mock_plans_validation(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/mock-plans/generate",
+                json={"count": 0, "preset": "balanced"},
+            )
+        assert response.status_code == 422
+
+    def test_immediate_inline_no_batch(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/immediate/inline",
+                json={
+                    "plans": [load_plan("minimal").model_dump(mode="json")],
+                    "operational_units": [],
+                    "site_name": "ns",
+                },
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["batch"] is None
+        assert data["feasible_plan_count"] == 0
+
+    def test_predict_inline_runs(self):
+        minimal_plan = load_plan("minimal").model_dump(mode="json")
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/predict/inline",
+                json={
+                    "plans": [minimal_plan],
+                    "start_datetime": "2026-04-27T19:00:00Z",
+                    "site_name": "ns",
+                    "operational_units": ["mast01"],
+                },
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert "predicted_batches" in data
+
+    def test_inline_requires_plans(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/immediate/inline",
+                json={
+                    "plans": [],
+                    "site_name": "ns",
+                    "operational_units": ["mast01"],
+                },
+            )
+        assert response.status_code == 422
+
+    def test_generated_mock_plans_run_in_inline_immediate(self):
+        with TestClient(app) as client:
+            generated = client.post(
+                "/scheduler/mock-plans/generate",
+                json={"count": 8, "seed": 42, "preset": "balanced"},
+            )
+            assert generated.status_code == 200
+            plans = generated.json()["plans"]
+
+            response = client.post(
+                "/scheduler/immediate/inline",
+                json={
+                    "plans": plans,
+                    "operational_units": ["mast01", "mast02", "mast03"],
+                    "site_name": "ns",
+                },
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "feasible_plan_count" in data

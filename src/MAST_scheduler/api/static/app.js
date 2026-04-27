@@ -1,7 +1,10 @@
 const API_PATHS = {
   status: "/scheduler/status",
   immediate: "/scheduler/immediate",
+  immediateInline: "/scheduler/immediate/inline",
   predict: "/scheduler/predict",
+  predictInline: "/scheduler/predict/inline",
+  generateMockPlans: "/scheduler/mock-plans/generate",
 };
 
 const EMPTY_JSON = "{}";
@@ -14,6 +17,12 @@ const elements = {
   statusConfig: document.querySelector("#status-config"),
   refreshStatus: document.querySelector("#refresh-status"),
   planPaths: document.querySelector("#plan-paths"),
+  mockCount: document.querySelector("#mock-count"),
+  mockSeed: document.querySelector("#mock-seed"),
+  mockPreset: document.querySelector("#mock-preset"),
+  useInlineGenerated: document.querySelector("#use-inline-generated"),
+  generateMockPlans: document.querySelector("#generate-mock-plans"),
+  mockSummary: document.querySelector("#mock-summary"),
   siteName: document.querySelector("#site-name"),
   operationalUnits: document.querySelector("#operational-units"),
   immediateNow: document.querySelector("#immediate-now"),
@@ -29,6 +38,11 @@ const elements = {
   predictionSummary: document.querySelector("#prediction-summary"),
   predictionList: document.querySelector("#prediction-list"),
   predictionJson: document.querySelector("#prediction-json"),
+};
+
+const state = {
+  generatedPlans: [],
+  generatedSummary: null,
 };
 
 function splitList(value) {
@@ -94,6 +108,20 @@ function buildBasePayload() {
     site_name: elements.siteName.value,
     operational_units: splitList(elements.operationalUnits.value),
   };
+}
+
+function useInlinePlans() {
+  return elements.useInlineGenerated.value === "true" && state.generatedPlans.length > 0;
+}
+
+function mockSummaryRows(summary) {
+  return [
+    ["Generated plans", summary.generated_count],
+    ["Instruments", formatJson(summary.instrument_counts)],
+    ["With constraints", summary.with_constraints],
+    ["ToO", summary.too_count],
+    ["Quorum distribution", formatJson(summary.quorum_distribution)],
+  ];
 }
 
 function renderSummary(target, rows) {
@@ -196,6 +224,18 @@ function renderPrediction(data) {
   }
 }
 
+function renderMockSummary(data) {
+  state.generatedPlans = data.plans ?? [];
+  state.generatedSummary = data.summary ?? null;
+  if (!state.generatedSummary) {
+    elements.mockSummary.className = "empty-state";
+    elements.mockSummary.textContent = "No generated summary available.";
+    return;
+  }
+  elements.mockSummary.className = "";
+  renderSummary(elements.mockSummary, mockSummaryRows(state.generatedSummary));
+}
+
 async function refreshStatus() {
   elements.refreshStatus.disabled = true;
   try {
@@ -228,7 +268,13 @@ async function runImmediate() {
       payload.now = now;
     }
 
-    const data = await requestJson(API_PATHS.immediate, {
+    const endpoint = useInlinePlans() ? API_PATHS.immediateInline : API_PATHS.immediate;
+    if (useInlinePlans()) {
+      delete payload.plan_paths;
+      payload.plans = state.generatedPlans;
+    }
+
+    const data = await requestJson(endpoint, {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -252,12 +298,19 @@ async function runPredict() {
       throw new Error("Prediction start is required.");
     }
 
-    const data = await requestJson(API_PATHS.predict, {
+    const payload = {
+      ...buildBasePayload(),
+      start_datetime: startDatetime,
+    };
+    const endpoint = useInlinePlans() ? API_PATHS.predictInline : API_PATHS.predict;
+    if (useInlinePlans()) {
+      delete payload.plan_paths;
+      payload.plans = state.generatedPlans;
+    }
+
+    const data = await requestJson(endpoint, {
       method: "POST",
-      body: JSON.stringify({
-        ...buildBasePayload(),
-        start_datetime: startDatetime,
-      }),
+      body: JSON.stringify(payload),
     });
     renderPrediction(data);
   } catch (error) {
@@ -268,9 +321,38 @@ async function runPredict() {
   }
 }
 
+async function generateMockPlans() {
+  setError("");
+  elements.generateMockPlans.disabled = true;
+
+  try {
+    const count = Number(elements.mockCount.value || 0);
+    const seedValue = elements.mockSeed.value.trim();
+    const payload = {
+      count,
+      preset: elements.mockPreset.value,
+    };
+    if (seedValue) {
+      payload.seed = Number(seedValue);
+    }
+    const data = await requestJson(API_PATHS.generateMockPlans, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    renderMockSummary(data);
+  } catch (error) {
+    elements.mockSummary.className = "empty-state";
+    elements.mockSummary.textContent = "Failed to generate mock plans.";
+    setError(error.message);
+  } finally {
+    elements.generateMockPlans.disabled = false;
+  }
+}
+
 elements.refreshStatus.addEventListener("click", refreshStatus);
 elements.runImmediate.addEventListener("click", runImmediate);
 elements.runPredict.addEventListener("click", runPredict);
+elements.generateMockPlans.addEventListener("click", generateMockPlans);
 
 setDefaultPredictionStart();
 elements.completedTonight.value = EMPTY_JSON;
