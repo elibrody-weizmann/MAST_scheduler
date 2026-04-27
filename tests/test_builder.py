@@ -72,20 +72,23 @@ class TestExposureNegotiation:
         assert batch is not None
         assert getattr(batch, "exposure_duration", 0) == 1800.0
 
-    def test_plan_excluded_when_overexposed(self):
-        # Plan with max_exposure_duration < batch_exposure_time should be excluded
+    def test_exposure_incompatible_plan_is_split_into_its_own_group(self):
         base = load_plan("minimal")  # requested=900, max=1800
         sensitive = load_plan("time_window")  # requested=600, max=1200
-        # batch_exp = max(900, 600) = 900; cap = min(1800, 1200) = 1200; both fit
-        # Let's force the case: make sensitive have max=800 so it gets excluded
+        # Force incompatibility with the base plan's negotiated exposure.
         sensitive.target.max_exposure_duration = 800.0
         sensitive.target.requested_exposure_duration = 600.0
-        # batch_exp = max(900, 600) = 900; sensitive.max=800 < 900 → excluded
-        batch = build([base, sensitive])
+
+        batch, grouping, _, build_trace = BatchBuilder(
+            [base, sensitive], operational_units=["mast01"], config=SchedulerConfig()
+        ).build_with_trace()
+
         assert batch is not None
-        plan_ids = {p.ulid for p in batch.plans}
-        assert sensitive.ulid not in plan_ids
-        assert base.ulid in plan_ids
+        assert len(grouping.groups) == 2
+        all_group_plan_ids = {plan_id for group in grouping.groups for plan_id in group.plan_ids}
+        assert base.ulid in all_group_plan_ids
+        assert sensitive.ulid in all_group_plan_ids
+        assert not build_trace.dropped_by_exposure_cap
 
 
 class TestCalibration:
@@ -223,3 +226,24 @@ class TestTraceBuilder:
         assert grouping.groups
         assert priority.ranked_groups
         assert build_trace.final_plan_ids
+
+    def test_grouping_splits_exposure_incompatible_plans(self):
+        base = load_plan("minimal")
+        base.target.requested_exposure_duration = 900.0
+        base.target.max_exposure_duration = 1800.0
+        sensitive = load_plan("time_window")
+        sensitive.target.requested_exposure_duration = 600.0
+        sensitive.target.max_exposure_duration = 800.0
+
+        _, grouping, _, build_trace = BatchBuilder(
+            [base, sensitive],
+            operational_units=["mast01"],
+            config=SchedulerConfig(),
+            site=WIS_LOCATION,
+            now=NOW_NIGHT,
+        ).build_with_trace()
+
+        all_group_plan_ids = {plan_id for group in grouping.groups for plan_id in group.plan_ids}
+        assert base.ulid in all_group_plan_ids
+        assert sensitive.ulid in all_group_plan_ids
+        assert not build_trace.dropped_by_exposure_cap

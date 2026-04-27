@@ -42,6 +42,37 @@ def _group_key(plan: Plan) -> tuple[str, str | None]:
     return (instrument, _disperser(plan))
 
 
+def _requested_exposure(plan: Plan) -> float:
+    return float(plan.target.requested_exposure_duration or 0.0)
+
+
+def _can_join_exposure_group(plan: Plan, subgroup: list[Plan]) -> bool:
+    """Return True if plan can join subgroup without violating max exposure cap."""
+    if not subgroup:
+        return True
+    negotiated_exposure = _negotiate_exposure(subgroup)
+    if negotiated_exposure is None:
+        return True
+    cap = plan.target.max_exposure_duration
+    return cap is None or cap >= negotiated_exposure
+
+
+def _split_group_by_exposure_cap(group: list[Plan]) -> list[list[Plan]]:
+    """Pre-split plans so each subgroup is exposure-cap compatible."""
+    sorted_group = sorted(group, key=_requested_exposure, reverse=True)
+    subgroups: list[list[Plan]] = []
+    for plan in sorted_group:
+        placed = False
+        for subgroup in subgroups:
+            if _can_join_exposure_group(plan, subgroup):
+                subgroup.append(plan)
+                placed = True
+                break
+        if not placed:
+            subgroups.append([plan])
+    return subgroups
+
+
 def _group_lamp_on(group: list[Plan]) -> bool:
     return any(
         p.spec_assignment.calibration.lamp_on
@@ -241,10 +272,16 @@ class BatchBuilder:
             )
             return None, grouping, PriorityTrace(), BatchBuildTrace()
 
-        groups: dict[tuple[str, str | None], list[Plan]] = {}
+        base_groups: dict[tuple[str, str | None], list[Plan]] = {}
         for plan in eligible:
             key = _group_key(plan)
-            groups.setdefault(key, []).append(plan)
+            base_groups.setdefault(key, []).append(plan)
+
+        groups: dict[tuple[str, str | None, int], list[Plan]] = {}
+        for base_key, group in base_groups.items():
+            subgroups = _split_group_by_exposure_cap(group)
+            for subgroup_index, subgroup in enumerate(subgroups, start=1):
+                groups[(base_key[0], base_key[1], subgroup_index)] = subgroup
 
         excluded = [
             DroppedPlanTrace(
@@ -370,7 +407,7 @@ def _priority_factors(
 
 
 def _priority_rationale(
-    ranked_groups: list[tuple[tuple[str, str | None], list[Plan]]],
+    ranked_groups: list[tuple[tuple[str, str | None, int], list[Plan]]],
     site: EarthLocation | None,
     now: datetime | None,
     config: SchedulerConfig | None,
@@ -389,11 +426,12 @@ def _priority_rationale(
     )
 
 
-def _group_id(key: tuple[str, str | None]) -> str:
-    instrument, disperser = key
+def _group_id(key: tuple[str, str | None, int]) -> str:
+    instrument, disperser, subgroup_index = key
+    subgroup_suffix = f"#{subgroup_index}"
     if disperser:
-        return f"{instrument}:{disperser}"
-    return f"{instrument}:default"
+        return f"{instrument}:{disperser}{subgroup_suffix}"
+    return f"{instrument}:default{subgroup_suffix}"
 
 
 def _plan_id(plan: Plan) -> str:

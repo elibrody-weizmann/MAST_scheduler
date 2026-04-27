@@ -7,8 +7,8 @@ Isolated Python library and FastAPI service implementing the MAST observation sc
 Given a list of pending `Plan` objects, a telescope site, and a set of operational units, the scheduler:
 
 1. **Filters** plans through a feasibility chain: astronomical night → time window → airmass → moon phase → moon separation → unit quorum → repeat quota
-2. **Groups** surviving plans by `(instrument, disperser)` and ranks groups by ToO flag, merit score, exposure time, and observing condition score (airmass, moon separation, urgency)
-3. **Builds** the highest-priority batch: negotiates exposure time, applies `max_exposure_duration` caps, allocates units, merges calibration lamp/filter settings
+2. **Groups** surviving plans by `(instrument, disperser)` and then splits into exposure-compatible subgroups so `max_exposure_duration` is respected during grouping; ranks groups by ToO flag, merit score, exposure time, and observing condition score (airmass, moon separation, urgency)
+3. **Builds** the highest-priority batch: negotiates exposure time, allocates units, merges calibration lamp/filter settings
 4. **Simulates** a full night in predictive mode by running the filter+build loop while advancing a clock, including inter-batch setup overhead (spectrograph switch, grating stage move, lamp warmup/cooldown)
 
 ## Architecture
@@ -47,10 +47,13 @@ The FastAPI app serves a dependency-free web interface at `/`. It lets operators
 
 - Check scheduler service health and active configuration
 - Enter plan TOML paths, site, operational units, and scheduling times
+- Apply operational-unit presets (`mast01-03`, `mast01-10`, `mast01-20`) for quick mocking
+- Set optional environmental context (`humidity_percent`, `temperature_c`, `wind_speed_mps`, `cloud_cover_percent`) that is echoed by the API (input-only; does not affect feasibility yet)
 - Generate deterministic mock plans at scale with configurable presets and seed
 - Run immediate/predictive scheduling against either file-path plans or inline generated plans
 - Run the immediate scheduler and inspect the selected batch
 - Predict the night and inspect the ordered batch timeline
+- Inspect stage-by-stage trace details with grouped keep/drop rationales and copy JSON from all raw JSON panels
 
 Plan paths entered in the UI must be readable by the FastAPI process. The UI does
 not upload plan files; it submits paths to the same API contract used by direct
@@ -71,11 +74,14 @@ Returns the next batch to run right now.
   "operational_units": ["mast01", "mast02"],
   "site_name": "ns",
   "now": "2026-04-27T01:00:00Z",
-  "completed_tonight": {}
+  "completed_tonight": {},
+  "environment": {
+    "humidity_percent": 45.0
+  }
 }
 ```
 
-Response includes the `BatchData` dict and `feasible_plan_count`.
+Response includes the `BatchData` dict, `feasible_plan_count`, and echoed `environment`.
 
 ### `POST /scheduler/immediate/inline`
 
@@ -88,7 +94,10 @@ instead of `plan_paths`.
   "operational_units": ["mast01", "mast02"],
   "site_name": "ns",
   "now": "2026-04-27T01:00:00Z",
-  "completed_tonight": {}
+  "completed_tonight": {},
+  "environment": {
+    "humidity_percent": 45.0
+  }
 }
 ```
 
@@ -101,7 +110,10 @@ Simulates the rest of the night and returns an ordered list of `PredictedBatch` 
   "plan_paths": ["/path/to/PLAN_*.toml"],
   "start_datetime": "2026-04-27T19:00:00Z",
   "site_name": "ns",
-  "operational_units": ["mast01", "mast02", "mast03"]
+  "operational_units": ["mast01", "mast02", "mast03"],
+  "environment": {
+    "humidity_percent": 45.0
+  }
 }
 ```
 
@@ -115,7 +127,10 @@ instead of `plan_paths`.
   "plans": [{ "...": "Plan-shaped payload" }],
   "start_datetime": "2026-04-27T19:00:00Z",
   "site_name": "ns",
-  "operational_units": ["mast01", "mast02", "mast03"]
+  "operational_units": ["mast01", "mast02", "mast03"],
+  "environment": {
+    "humidity_percent": 45.0
+  }
 }
 ```
 
