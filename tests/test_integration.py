@@ -11,7 +11,7 @@ from MAST_scheduler.api.app import app
 from MAST_scheduler.config import SchedulerConfig
 from MAST_scheduler.scheduler import Scheduler
 
-from .conftest import NOW_NIGHT, WIS_LOCATION, load_plan
+from .conftest import NOW_DAY, NOW_NIGHT, WIS_LOCATION, load_plan
 
 
 @pytest.fixture
@@ -61,6 +61,126 @@ class TestImmediateBatch:
             )
 
         assert batch is None
+
+
+class TestDaytimeSimulation:
+    """Verify that daytime requests advance the clock to dusk and mark simulated=True."""
+
+    def _make_night_obs(self, dusk_dt: datetime) -> MagicMock:
+        from astropy.time import Time
+
+        obs = MagicMock(spec=Observer)
+        # is_night returns False for the daytime call, True for the simulated-dusk call
+        obs.is_night.side_effect = lambda t, horizon=None: not (t.unix < Time(dusk_dt).unix)
+        obs.moon_illumination.return_value = 0.05
+        moon_altaz = MagicMock()
+        moon_altaz.alt = MagicMock()
+        moon_altaz.az = MagicMock()
+        moon_altaz.frame = MagicMock()
+        obs.moon_altaz.return_value = moon_altaz
+        dusk_astropy = MagicMock()
+        dusk_astropy.to_datetime.return_value = dusk_dt
+        obs.sun_set_time.return_value = dusk_astropy
+        return obs
+
+    def test_daytime_sets_simulated_true(self):
+        scheduler = Scheduler(config=SchedulerConfig())
+        plans = [load_plan("minimal"), load_plan("airmass")]
+        dusk_dt = datetime(2026, 4, 27, 18, 30, 0, tzinfo=UTC)
+        obs = self._make_night_obs(dusk_dt)
+
+        with patch("MAST_scheduler.filters._plan_skycoord") as mock_coord:
+            target = MagicMock()
+            target.transform_to.return_value = MagicMock(alt=MagicMock(deg=45.0))
+            target.separation.return_value = MagicMock(deg=90.0)
+            mock_coord.return_value = target
+            with (
+                patch("MAST_scheduler.scheduler.Observer", return_value=obs),
+                patch("MAST_scheduler.filters.Observer", return_value=obs),
+            ):
+                _, trace = scheduler.make_immediate_batch_with_trace(
+                    plans,
+                    site=WIS_LOCATION,
+                    operational_units=["mast01", "mast02"],
+                    now=NOW_DAY,
+                )
+
+        assert trace.simulated is True
+        assert trace.simulated_time == dusk_dt
+
+    def test_nighttime_simulated_false(self):
+        scheduler = Scheduler(config=SchedulerConfig())
+        plans = [load_plan("minimal")]
+        obs = MagicMock(spec=Observer)
+        obs.is_night.return_value = True
+        obs.moon_illumination.return_value = 0.05
+        moon_altaz = MagicMock()
+        moon_altaz.alt = MagicMock()
+        moon_altaz.az = MagicMock()
+        moon_altaz.frame = MagicMock()
+        obs.moon_altaz.return_value = moon_altaz
+
+        with patch("MAST_scheduler.filters._plan_skycoord") as mock_coord:
+            target = MagicMock()
+            target.transform_to.return_value = MagicMock(alt=MagicMock(deg=45.0))
+            target.separation.return_value = MagicMock(deg=90.0)
+            mock_coord.return_value = target
+            with (
+                patch("MAST_scheduler.scheduler.Observer", return_value=obs),
+                patch("MAST_scheduler.filters.Observer", return_value=obs),
+            ):
+                _, trace = scheduler.make_immediate_batch_with_trace(
+                    plans,
+                    site=WIS_LOCATION,
+                    operational_units=["mast01", "mast02"],
+                    now=NOW_NIGHT,
+                )
+
+        assert trace.simulated is False
+        assert trace.simulated_time is None
+
+    def test_daytime_api_response_simulated_flag(self):
+        """API /immediate/inline response includes simulated=True for a daytime now."""
+        dusk_dt = datetime(2026, 4, 27, 18, 30, 0, tzinfo=UTC)
+
+        from astropy.time import Time
+
+        obs = MagicMock(spec=Observer)
+        obs.is_night.side_effect = lambda t, horizon=None: not (t.unix < Time(dusk_dt).unix)
+        obs.moon_illumination.return_value = 0.05
+        moon_altaz = MagicMock()
+        moon_altaz.alt = MagicMock()
+        moon_altaz.az = MagicMock()
+        moon_altaz.frame = MagicMock()
+        obs.moon_altaz.return_value = moon_altaz
+        dusk_astropy = MagicMock()
+        dusk_astropy.to_datetime.return_value = dusk_dt
+        obs.sun_set_time.return_value = dusk_astropy
+
+        with (
+            patch("MAST_scheduler.filters._plan_skycoord") as mock_coord,
+            patch("MAST_scheduler.scheduler.Observer", return_value=obs),
+            patch("MAST_scheduler.filters.Observer", return_value=obs),
+            TestClient(app) as client,
+        ):
+            target = MagicMock()
+            target.transform_to.return_value = MagicMock(alt=MagicMock(deg=45.0))
+            target.separation.return_value = MagicMock(deg=90.0)
+            mock_coord.return_value = target
+            response = client.post(
+                "/scheduler/immediate/inline",
+                json={
+                    "plans": [load_plan("minimal").model_dump(mode="json")],
+                    "operational_units": ["mast01", "mast02"],
+                    "site_name": "ns",
+                    "now": NOW_DAY.isoformat(),
+                },
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["simulated"] is True
+        assert data["simulated_time"] is not None
 
 
 class TestPredictedBatches:

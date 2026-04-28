@@ -57,8 +57,12 @@ class Scheduler:
         if now is None:
             now = datetime.now(tz=UTC)
 
+        now, simulated, simulated_time = _maybe_advance_to_dusk(now, site, self.config)
+
         trace = ImmediateScheduleTrace(
-            input_plans=[_plan_trace_summary(plan) for plan in pending_plans]
+            input_plans=[_plan_trace_summary(plan) for plan in pending_plans],
+            simulated=simulated,
+            simulated_time=simulated_time,
         )
 
         feasible, filter_stages = PlanFilter(
@@ -184,6 +188,28 @@ class Scheduler:
             operational_units=operational_units,
         )
         return batches
+
+
+def _maybe_advance_to_dusk(
+    now: datetime,
+    site: EarthLocation,
+    config: SchedulerConfig,
+) -> tuple[datetime, bool, datetime | None]:
+    """Return (effective_now, simulated, simulated_time).
+
+    If now falls outside astronomical night, advance to the next dusk so the
+    scheduler can preview what would run at the start of tonight.
+    """
+    from .filters import _TWILIGHT_HORIZONS
+
+    horizon = _TWILIGHT_HORIZONS.get(config.twilight_type, -18 * u.deg)
+    observer = Observer(location=site)
+    astropy_now = Time(now)
+    if observer.is_night(astropy_now, horizon=horizon):
+        return now, False, None
+    dusk = observer.sun_set_time(astropy_now, which="next", horizon=horizon)
+    dusk_dt: datetime = dusk.to_datetime(timezone=UTC)
+    return dusk_dt, True, dusk_dt
 
 
 def _advance(dt: datetime, seconds: float) -> datetime:

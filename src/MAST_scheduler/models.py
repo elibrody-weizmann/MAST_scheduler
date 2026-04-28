@@ -101,6 +101,8 @@ class ImmediateScheduleTrace(BaseModel):
     priority: PriorityTrace | None = None
     build: BatchBuildTrace | None = None
     final_plan_ids: list[str] = Field(default_factory=list)
+    simulated: bool = False
+    simulated_time: datetime | None = None
 
 
 class PredictedIterationTrace(BaseModel):
@@ -157,6 +159,8 @@ class ImmediateResponse(BaseModel):
     message: str = ""
     environment: EnvironmentConditions | None = None
     trace: ImmediateScheduleTrace | None = None
+    simulated: bool = False
+    simulated_time: datetime | None = None
 
 
 class PredictRequest(BaseModel):

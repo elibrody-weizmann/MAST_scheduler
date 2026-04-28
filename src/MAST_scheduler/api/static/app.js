@@ -47,6 +47,7 @@ const elements = {
   runPredict: document.querySelector("#run-predict"),
   errorMessage: document.querySelector("#error-message"),
   immediateState: document.querySelector("#immediate-state"),
+  simulatedBanner: document.querySelector("#simulated-banner"),
   immediateSummary: document.querySelector("#immediate-summary"),
   immediateJson: document.querySelector("#immediate-json"),
   copyImmediateJson: document.querySelector("#copy-immediate-json"),
@@ -297,6 +298,15 @@ function formatMinutesSeconds(seconds) {
 function renderImmediate(data) {
   elements.immediateJson.textContent = formatJson(data);
 
+  if (data.simulated && data.simulated_time) {
+    const dusk = formatDateTime(data.simulated_time);
+    elements.simulatedBanner.textContent =
+      `Simulated — it is currently daytime. Showing the batch that would run at astronomical dusk (${dusk}).`;
+    elements.simulatedBanner.hidden = false;
+  } else {
+    elements.simulatedBanner.hidden = true;
+  }
+
   if (!data.batch) {
     setState(elements.immediateState, "No batch", "");
     elements.immediateSummary.className = "empty-state";
@@ -306,7 +316,7 @@ function renderImmediate(data) {
   }
 
   const batch = data.batch;
-  setState(elements.immediateState, "Ready", "success");
+  setState(elements.immediateState, data.simulated ? "Simulated" : "Ready", data.simulated ? "" : "success");
   elements.immediateSummary.className = "";
   renderSummary(elements.immediateSummary, [
     ["Feasible plans", data.feasible_plan_count],

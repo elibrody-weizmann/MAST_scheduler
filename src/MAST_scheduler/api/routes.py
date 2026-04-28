@@ -68,45 +68,73 @@ def _load_inline_plans(plans: list[dict]) -> list[Plan]:
     return [_plan_from_payload(plan_payload) for plan_payload in plans]
 
 
-@router.post("/immediate", response_model=ImmediateResponse)
-def immediate(req: ImmediateRequest, request: Request) -> ImmediateResponse:
-    scheduler: Scheduler = request.app.state.scheduler
-    site = _resolve_site(req.site_name)
-    plans = _load_plans(req.plan_paths)
+def _serialize_batch(batch) -> dict:
+    from common.models.highspec import HighspecSettings
 
-    if req.include_trace:
-        batch, trace = scheduler.make_immediate_batch_with_trace(
-            plans,
-            site=site,
-            operational_units=req.operational_units,
-            now=req.now,
-            completed_tonight=req.completed_tonight,
+    spec = batch.spec_assignment
+    instrument = str(spec.instrument) if spec and spec.instrument else None
+    disperser = None
+    if batch.plans:
+        settings = (
+            batch.plans[0].spec_assignment.settings if batch.plans[0].spec_assignment else None
         )
-    else:
-        batch = scheduler.make_immediate_batch(
-            plans,
-            site=site,
-            operational_units=req.operational_units,
-            now=req.now,
-            completed_tonight=req.completed_tonight,
-        )
-        trace = None
+        if isinstance(settings, HighspecSettings):
+            disperser = str(settings.disperser)
 
+    allocated: list[str] = []
+    for plan in batch.plans:
+        allocated.extend(u for u in plan.allocated_units if u not in allocated)
+
+    raw = batch.model_dump(mode="json", exclude={"plans"})
+    raw.update(
+        instrument=instrument,
+        disperser=disperser,
+        exposure_time=batch.exposure_duration,
+        num_exposures=batch.number_of_exposures,
+        allocated_units=allocated,
+    )
+    return raw
+
+
+def _build_immediate_response(
+    batch,
+    trace,
+    include_trace: bool,
+    environment,
+) -> ImmediateResponse:
     if batch is None:
         return ImmediateResponse(
             batch=None,
             feasible_plan_count=0,
             message="No feasible plans",
-            environment=req.environment,
-            trace=trace,
+            environment=environment,
+            trace=trace if include_trace else None,
+            simulated=trace.simulated,
+            simulated_time=trace.simulated_time,
         )
-
     return ImmediateResponse(
-        batch=batch.model_dump(mode="json", exclude={"plans"}),
+        batch=_serialize_batch(batch),
         feasible_plan_count=len(batch.plans),
-        environment=req.environment,
-        trace=trace,
+        environment=environment,
+        trace=trace if include_trace else None,
+        simulated=trace.simulated,
+        simulated_time=trace.simulated_time,
     )
+
+
+@router.post("/immediate", response_model=ImmediateResponse)
+def immediate(req: ImmediateRequest, request: Request) -> ImmediateResponse:
+    scheduler: Scheduler = request.app.state.scheduler
+    site = _resolve_site(req.site_name)
+    plans = _load_plans(req.plan_paths)
+    batch, trace = scheduler.make_immediate_batch_with_trace(
+        plans,
+        site=site,
+        operational_units=req.operational_units,
+        now=req.now,
+        completed_tonight=req.completed_tonight,
+    )
+    return _build_immediate_response(batch, trace, req.include_trace, req.environment)
 
 
 @router.post("/immediate/inline", response_model=ImmediateResponse)
@@ -114,40 +142,14 @@ def immediate_inline(req: InlineImmediateRequest, request: Request) -> Immediate
     scheduler: Scheduler = request.app.state.scheduler
     site = _resolve_site(req.site_name)
     plans = _load_inline_plans(req.plans)
-
-    if req.include_trace:
-        batch, trace = scheduler.make_immediate_batch_with_trace(
-            plans,
-            site=site,
-            operational_units=req.operational_units,
-            now=req.now,
-            completed_tonight=req.completed_tonight,
-        )
-    else:
-        batch = scheduler.make_immediate_batch(
-            plans,
-            site=site,
-            operational_units=req.operational_units,
-            now=req.now,
-            completed_tonight=req.completed_tonight,
-        )
-        trace = None
-
-    if batch is None:
-        return ImmediateResponse(
-            batch=None,
-            feasible_plan_count=0,
-            message="No feasible plans",
-            environment=req.environment,
-            trace=trace,
-        )
-
-    return ImmediateResponse(
-        batch=batch.model_dump(mode="json", exclude={"plans"}),
-        feasible_plan_count=len(batch.plans),
-        environment=req.environment,
-        trace=trace,
+    batch, trace = scheduler.make_immediate_batch_with_trace(
+        plans,
+        site=site,
+        operational_units=req.operational_units,
+        now=req.now,
+        completed_tonight=req.completed_tonight,
     )
+    return _build_immediate_response(batch, trace, req.include_trace, req.environment)
 
 
 @router.post("/predict", response_model=PredictResponse)
