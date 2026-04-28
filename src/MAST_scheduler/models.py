@@ -101,6 +101,7 @@ class ImmediateScheduleTrace(BaseModel):
     priority: PriorityTrace | None = None
     build: BatchBuildTrace | None = None
     final_plan_ids: list[str] = Field(default_factory=list)
+    final_plans: list[dict] = Field(default_factory=list)
     simulated: bool = False
     simulated_time: datetime | None = None
 

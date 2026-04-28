@@ -34,6 +34,39 @@ class TestMockPlanGenerator:
         else:
             raise AssertionError("Expected ValueError for invalid count")
 
+    def test_too_plans_have_no_time_window(self):
+        # Generate a large batch with a high ToO fraction to ensure we get ToO plans.
+        req = MockPlanGenerateRequest(
+            count=100,
+            seed=42,
+            preset="balanced",
+            too_fraction=0.5,
+            include_constraints=True,
+            include_time_windows=True,
+        )
+        response = generate_mock_plans(req)
+        too_plans = [p for p in response.plans if p.get("too")]
+        assert too_plans, "Expected at least some ToO plans"
+        for plan in too_plans:
+            constraints = plan.get("constraints", {})
+            assert "time_window" not in constraints, (
+                f"ToO plan {plan['ulid']} should not have a time_window"
+            )
+
+    def test_non_too_plans_may_have_time_window(self):
+        # Non-ToO plans with constraints enabled should still get time windows.
+        req = MockPlanGenerateRequest(
+            count=100,
+            seed=42,
+            preset="constraints-heavy",
+            too_fraction=0.0,
+            include_constraints=True,
+            include_time_windows=True,
+        )
+        response = generate_mock_plans(req)
+        plans_with_window = [p for p in response.plans if "time_window" in p.get("constraints", {})]
+        assert plans_with_window, "Expected some non-ToO plans to have a time_window"
+
     def test_default_generation_omits_calibration(self):
         response = generate_mock_plans(MockPlanGenerateRequest(count=30, seed=7))
         for plan in response.plans:

@@ -127,12 +127,13 @@ def _build_plan(
     max_exposure = min(req.exposure_range_seconds[1], requested_exposure * max_exposure_multiplier)
     repeats = _pick_repeat(req, rng)
     too_probability = max(req.too_fraction, preset["too_probability"])
+    is_too = rng.random() < too_probability
     plan = {
         "ulid": _random_ulid(rng),
         "owner": DEFAULT_OWNER,
         "merit": rng.randint(*req.merit_range),
         "approved": True,
-        "too": rng.random() < too_probability,
+        "too": is_too,
         "quorum": _pick_quorum(req, rng),
         "allocated_units": _pick_allocated_units(req, rng),
         "target": {
@@ -148,7 +149,7 @@ def _build_plan(
         },
         "spec_assignment": _build_spec_assignment(req, instrument, rng),
     }
-    maybe_constraints = _build_constraints(req, rng, base_time, preset)
+    maybe_constraints = _build_constraints(req, rng, base_time, preset, is_too=is_too)
     if maybe_constraints is not None:
         plan["constraints"] = maybe_constraints
     return plan
@@ -202,6 +203,8 @@ def _build_constraints(
     rng: random.Random,
     base_time: datetime,
     preset: dict[str, float],
+    *,
+    is_too: bool = False,
 ) -> dict | None:
     if not req.include_constraints:
         return None
@@ -216,7 +219,7 @@ def _build_constraints(
             "max_phase": round(rng.uniform(15, 80), 2),
             "min_distance": round(rng.uniform(15, 90), 2),
         }
-    if req.include_time_windows:
+    if req.include_time_windows and not is_too:
         start_offset = rng.randint(0, 6)
         start = base_time + timedelta(hours=start_offset)
         end = start + timedelta(hours=TIME_WINDOW_HOURS)

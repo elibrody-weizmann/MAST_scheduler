@@ -88,6 +88,7 @@ class Scheduler:
         trace.priority = priority_trace
         trace.build = build_trace
         trace.final_plan_ids = [_plan_id(plan) for plan in batch.plans] if batch else []
+        trace.final_plans = [plan.model_dump(mode="json") for plan in batch.plans] if batch else []
         return batch, trace
 
     def make_predicted_batches_with_trace(

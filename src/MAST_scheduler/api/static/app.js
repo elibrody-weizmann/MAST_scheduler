@@ -59,6 +59,9 @@ const elements = {
   traceState: document.querySelector("#trace-state"),
   traceTimeline: document.querySelector("#trace-timeline"),
   traceDetails: document.querySelector("#trace-details"),
+  mockPlansJsonContainer: document.querySelector("#mock-plans-json-container"),
+  mockPlansJson: document.querySelector("#mock-plans-json"),
+  copyMockPlansJson: document.querySelector("#copy-mock-plans-json"),
 };
 
 const state = {
@@ -611,10 +614,12 @@ function renderImmediateTrace(trace) {
       : "Batch build";
     section.append(traceButton(buildLabel, trace.build, "stage-build"));
   }
+  const finalPlansPayload =
+    (trace.final_plans ?? []).length > 0 ? trace.final_plans : (trace.final_plan_ids ?? []);
   section.append(
     traceButton(
       `Final plans (${(trace.final_plan_ids ?? []).length})`,
-      trace.final_plan_ids ?? [],
+      finalPlansPayload,
       "stage-final",
     ),
   );
@@ -694,10 +699,13 @@ function renderMockSummary(data) {
   if (!state.generatedSummary) {
     elements.mockSummary.className = "empty-state";
     elements.mockSummary.textContent = "No generated summary available.";
+    elements.mockPlansJsonContainer.hidden = true;
     return;
   }
   elements.mockSummary.className = "";
   renderSummary(elements.mockSummary, mockSummaryRows(state.generatedSummary));
+  elements.mockPlansJson.textContent = formatJson(state.generatedPlans);
+  elements.mockPlansJsonContainer.hidden = false;
 }
 
 async function refreshStatus() {
@@ -823,6 +831,7 @@ elements.applyOperationalUnitsPreset.addEventListener("click", applyOperationalU
 setupCopyButton(elements.copyStatusConfig, () => elements.statusConfig.textContent || EMPTY_JSON);
 setupCopyButton(elements.copyImmediateJson, () => elements.immediateJson.textContent || EMPTY_JSON);
 setupCopyButton(elements.copyPredictionJson, () => elements.predictionJson.textContent || EMPTY_JSON);
+setupCopyButton(elements.copyMockPlansJson, () => elements.mockPlansJson.textContent || EMPTY_JSON);
 window.addEventListener("resize", () => {
   if (selectedTraceItem && !elements.traceDetails.classList.contains("empty-state")) {
     alignTraceDetailsToSelection(selectedTraceItem);
