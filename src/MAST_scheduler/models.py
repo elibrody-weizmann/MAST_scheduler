@@ -267,6 +267,6 @@ class StatusResponse(BaseModel):
 
 # Known observatory sites: site_name -> (lon_deg, lat_deg, elevation_m)
 KNOWN_SITES: dict[str, tuple[float, float, float]] = {
-    "wis": (34.812, 31.906, 125.0),
+    "wis": (34.80803778278904, 31.90391628393614, 80.0),
     "ns": (35.027, 30.593, 500.0),
 }

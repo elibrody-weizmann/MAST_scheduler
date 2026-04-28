@@ -19,18 +19,18 @@ _THAR_FILTERS_PATCH.start()
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-# Wise Observatory: lon=34.763°E, lat=30.596°N, elev=875m
+# Weizmann Institute of Science: lon=34.808°E, lat=31.904°N, elev=80m
 WIS_LOCATION = EarthLocation(
-    lon=34.763 * u.deg,
-    lat=30.596 * u.deg,
-    height=875 * u.m,
+    lon=34.80803778278904 * u.deg,
+    lat=31.90391628393614 * u.deg,
+    height=80.0 * u.m,
 )
 
-# A time that is astronomical night at Wise Observatory (UTC)
+# A time that is astronomical night at the Weizmann Institute of Science (UTC)
 # 2026-04-27 01:00 UTC → ~03:00 local, well into the night
 NOW_NIGHT = datetime(2026, 4, 27, 1, 0, 0, tzinfo=UTC)
 
-# A time that is daytime at Wise Observatory (UTC)
+# A time that is daytime at the Weizmann Institute of Science (UTC)
 # 2026-04-27 10:00 UTC → ~13:00 local, midday
 NOW_DAY = datetime(2026, 4, 27, 10, 0, 0, tzinfo=UTC)
 
