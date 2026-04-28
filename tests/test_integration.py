@@ -9,7 +9,7 @@ from starlette.testclient import TestClient
 
 from MAST_scheduler.api.app import app
 from MAST_scheduler.config import SchedulerConfig
-from MAST_scheduler.scheduler import Scheduler
+from MAST_scheduler.scheduler import Scheduler, _predict_start_time
 
 from .conftest import NOW_DAY, NOW_NIGHT, WIS_LOCATION, load_plan
 
@@ -181,6 +181,92 @@ class TestDaytimeSimulation:
         data = response.json()
         assert data["simulated"] is True
         assert data["simulated_time"] is not None
+
+
+class TestPredictStartTime:
+    """Unit tests for _predict_start_time covering the three scheduling cases."""
+
+    # Fixed reference points used across all cases:
+    # tonight: 2026-04-27 19:00 – 2026-04-28 04:00 UTC
+    # tomorrow night: 2026-04-28 19:00 – 2026-04-29 04:00 UTC
+    TONIGHT_START = datetime(2026, 4, 27, 19, 0, tzinfo=UTC)
+    TONIGHT_END = datetime(2026, 4, 28, 4, 0, tzinfo=UTC)
+    TOMORROW_START = datetime(2026, 4, 28, 19, 0, tzinfo=UTC)
+    TOMORROW_END = datetime(2026, 4, 29, 4, 0, tzinfo=UTC)
+
+    def _make_observer(self, tonight_start: datetime, tonight_end: datetime) -> MagicMock:
+        obs = MagicMock(spec=Observer)
+        obs.tonight.return_value = (
+            MagicMock(to_datetime=lambda timezone: tonight_start),
+            MagicMock(to_datetime=lambda timezone: tonight_end),
+        )
+        return obs
+
+    def test_future_daytime_snaps_to_target_dusk(self):
+        """A future daytime timestamp → simulation starts at that night's dusk."""
+        obs = self._make_observer(self.TONIGHT_START, self.TONIGHT_END)
+        config = SchedulerConfig()
+        start = datetime(2026, 4, 28, 12, 0, tzinfo=UTC)  # tomorrow noon
+
+        with patch("MAST_scheduler.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 4, 27, 12, 0, tzinfo=UTC)  # today noon
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = _predict_start_time(obs, start, self.TOMORROW_START, self.TOMORROW_END, config)
+
+        assert result == self.TOMORROW_START
+
+    def test_future_nighttime_still_snaps_to_dusk(self):
+        """A future timestamp during that night's hours still snaps to dusk (not mid-night)."""
+        obs = self._make_observer(self.TONIGHT_START, self.TONIGHT_END)
+        config = SchedulerConfig()
+        start = datetime(2026, 4, 28, 22, 0, tzinfo=UTC)  # tomorrow 22:00 (during tomorrow's night)
+
+        with patch("MAST_scheduler.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 4, 27, 12, 0, tzinfo=UTC)  # today noon
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = _predict_start_time(obs, start, self.TOMORROW_START, self.TOMORROW_END, config)
+
+        assert result == self.TOMORROW_START
+
+    def test_tonight_mid_night_honours_exact_time(self):
+        """A timestamp inside the current ongoing night → use it directly (mid-night resume)."""
+        obs = self._make_observer(self.TONIGHT_START, self.TONIGHT_END)
+        config = SchedulerConfig()
+        start = datetime(2026, 4, 27, 22, 0, tzinfo=UTC)  # 22:00 — mid-tonight
+
+        with patch("MAST_scheduler.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 4, 27, 20, 0, tzinfo=UTC)  # 20:00 tonight
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = _predict_start_time(obs, start, self.TONIGHT_START, self.TONIGHT_END, config)
+
+        assert result == start
+
+    def test_today_daytime_snaps_to_coming_dusk(self):
+        """A daytime timestamp for today → simulation starts at tonight's dusk."""
+        obs = self._make_observer(self.TONIGHT_START, self.TONIGHT_END)
+        config = SchedulerConfig()
+        start = datetime(2026, 4, 27, 12, 0, tzinfo=UTC)  # today noon
+
+        with patch("MAST_scheduler.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 4, 27, 12, 0, tzinfo=UTC)  # same noon
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = _predict_start_time(obs, start, self.TONIGHT_START, self.TONIGHT_END, config)
+
+        assert result == self.TONIGHT_START
+
+    def test_start_exactly_at_night_start_honours_it(self):
+        """start_datetime == night_start is treated as within the current night."""
+        obs = self._make_observer(self.TONIGHT_START, self.TONIGHT_END)
+        config = SchedulerConfig()
+
+        with patch("MAST_scheduler.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 4, 27, 19, 1, tzinfo=UTC)  # just after dusk
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = _predict_start_time(
+                obs, self.TONIGHT_START, self.TONIGHT_START, self.TONIGHT_END, config
+            )
+
+        assert result == self.TONIGHT_START
 
 
 class TestPredictedBatches:

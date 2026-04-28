@@ -105,7 +105,9 @@ class Scheduler:
         night_end: datetime = night[1].to_datetime(timezone=UTC)
 
         units = operational_units if operational_units is not None else []
-        current_time = max(start_datetime.replace(tzinfo=UTC), night_start)
+        current_time = _predict_start_time(
+            observer, start_datetime, night_start, night_end, self.config
+        )
         completed_tonight: dict[str, int] = {}
         results: list[PredictedBatch] = []
         previous_batch: BatchData | None = None
@@ -188,6 +190,35 @@ class Scheduler:
             operational_units=operational_units,
         )
         return batches
+
+
+def _predict_start_time(
+    observer: Observer,
+    start_datetime: datetime,
+    night_start: datetime,
+    night_end: datetime,
+    config: SchedulerConfig,
+) -> datetime:
+    """Return the effective simulation start time for a prediction run.
+
+    Rules:
+    - If start_datetime falls within the *current* ongoing night, honour it exactly
+      (mid-night resume — the caller knows what they want).
+    - In every other case (future date, daytime, past) snap to dusk of the target
+      night so the full night is simulated from the beginning.
+    """
+    from .filters import _TWILIGHT_HORIZONS
+
+    horizon = _TWILIGHT_HORIZONS.get(config.twilight_type, -18 * u.deg)
+    now = datetime.now(tz=UTC)
+    start_utc = start_datetime if start_datetime.tzinfo else start_datetime.replace(tzinfo=UTC)
+
+    tonight = observer.tonight(time=Time(now), horizon=horizon)
+    tonight_start: datetime = tonight[0].to_datetime(timezone=UTC)
+    tonight_end: datetime = tonight[1].to_datetime(timezone=UTC)
+
+    in_current_night = tonight_start <= start_utc <= tonight_end
+    return start_utc if in_current_night else night_start
 
 
 def _maybe_advance_to_dusk(
