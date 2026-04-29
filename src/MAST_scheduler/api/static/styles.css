@@ -364,6 +364,80 @@ textarea {
   font-size: 0.92rem;
 }
 
+/* Unified batch card */
+.batch-card {
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  background: rgb(31 41 55 / 0.72);
+  overflow: hidden;
+}
+
+.batch-card.batch-card-too {
+  border-color: rgb(56 189 248 / 0.8);
+  background: rgb(56 189 248 / 0.12);
+  box-shadow: 0 0 0 1px rgb(56 189 248 / 0.25) inset;
+}
+
+.batch-card-header {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.75rem 1rem 0.5rem;
+}
+
+.batch-card-header h3 {
+  margin: 0;
+}
+
+.batch-card-rows {
+  display: grid;
+  padding: 0 1rem 0.75rem;
+  gap: 0;
+}
+
+.batch-card-row {
+  align-items: baseline;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.4rem 0;
+}
+
+.batch-card-row:last-child {
+  border-bottom: none;
+}
+
+.batch-card-row > span:first-child {
+  color: var(--muted);
+  flex-shrink: 0;
+  font-size: 0.88rem;
+}
+
+.batch-card-row > strong {
+  font-size: 0.92rem;
+  text-align: right;
+  word-break: break-all;
+}
+
+.batch-card-breakdown {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.82rem;
+  gap: 0.15rem;
+  padding: 0.25rem 0 0 0.85rem;
+}
+
+.batch-card-footer {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+}
+
 .trace-card {
   margin-top: 1rem;
 }

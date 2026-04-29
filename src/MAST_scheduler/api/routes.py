@@ -7,6 +7,7 @@ from astropy.coordinates import EarthLocation
 from common.models.plans import Plan
 from fastapi import APIRouter, HTTPException, Request
 
+from ..builder import _compute_setup_overhead, _compute_teardown
 from ..constraint_registry import CONSTRAINT_REGISTRY
 from ..mock_plans import generate_mock_plans
 from ..models import (
@@ -93,6 +94,12 @@ def _serialize_batch(batch) -> dict:
     too_count = sum(1 for plan in batch.plans if bool(plan.too))
     contains_too = too_count > 0
 
+    plan_ids = [str(plan.ulid) for plan in batch.plans]
+
+    cal = batch.spec_assignment.calibration if batch.spec_assignment else None
+    lamp_on = bool(cal.lamp_on) if cal is not None else None
+    calibration_filter = str(cal.filter) if cal and cal.filter else None
+
     raw = batch.model_dump(mode="json", exclude={"plans"})
     raw.update(
         instrument=instrument,
@@ -102,6 +109,9 @@ def _serialize_batch(batch) -> dict:
         allocated_units=allocated,
         too_count=too_count,
         contains_too=contains_too,
+        lamp_on=lamp_on,
+        calibration_filter=calibration_filter,
+        plan_ids=plan_ids,
     )
     return raw
 
@@ -111,6 +121,7 @@ def _build_immediate_response(
     trace,
     include_trace: bool,
     environment,
+    scheduler: Scheduler,
 ) -> ImmediateResponse:
     if batch is None:
         return ImmediateResponse(
@@ -122,8 +133,18 @@ def _build_immediate_response(
             simulated=trace.simulated,
             simulated_time=trace.simulated_time,
         )
+    setup_overhead, setup_breakdown = _compute_setup_overhead(batch, scheduler.config)
+    teardown_overhead, teardown_breakdown = _compute_teardown(batch, scheduler.config)
+    serialized = _serialize_batch(batch)
+    serialized.update(
+        predicted_duration_seconds=float(batch.predicted_duration or 0.0),
+        setup_overhead_seconds=float(setup_overhead),
+        setup_breakdown=setup_breakdown,
+        teardown_overhead_seconds=float(teardown_overhead),
+        teardown_breakdown=teardown_breakdown,
+    )
     return ImmediateResponse(
-        batch=ImmediateBatch(**_serialize_batch(batch)),
+        batch=ImmediateBatch(**serialized),
         feasible_plan_count=len(batch.plans),
         environment=environment,
         trace=trace if include_trace else None,
@@ -145,7 +166,7 @@ def immediate(req: ImmediateRequest, request: Request) -> ImmediateResponse:
         completed_tonight=req.completed_tonight,
         environment=req.environment,
     )
-    return _build_immediate_response(batch, trace, req.include_trace, req.environment)
+    return _build_immediate_response(batch, trace, req.include_trace, req.environment, scheduler)
 
 
 @router.post("/immediate/inline", response_model=ImmediateResponse)
@@ -161,7 +182,7 @@ def immediate_inline(req: InlineImmediateRequest, request: Request) -> Immediate
         completed_tonight=req.completed_tonight,
         environment=req.environment,
     )
-    return _build_immediate_response(batch, trace, req.include_trace, req.environment)
+    return _build_immediate_response(batch, trace, req.include_trace, req.environment, scheduler)
 
 
 @router.post("/predict", response_model=PredictResponse)

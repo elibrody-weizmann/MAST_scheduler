@@ -263,6 +263,153 @@ function mockSummaryRows(summary) {
   ];
 }
 
+function makeBatchCardRow(label, value) {
+  const row = document.createElement("div");
+  row.className = "batch-card-row";
+  const labelEl = document.createElement("span");
+  labelEl.textContent = label;
+  const valueEl = document.createElement("strong");
+  valueEl.textContent = value ?? "-";
+  row.append(labelEl, valueEl);
+  return row;
+}
+
+function makeBatchCardBreakdown(parts) {
+  const bd = document.createElement("div");
+  bd.className = "batch-card-breakdown";
+  for (const line of parts) {
+    const item = document.createElement("span");
+    item.textContent = `↳ ${line}`;
+    bd.append(item);
+  }
+  return bd;
+}
+
+/**
+ * Render a unified batch card article.
+ *
+ * batch fields consumed (all optional except instrument):
+ *   instrument, disperser, predicted_start, predicted_end,
+ *   predicted_duration_seconds, setup_overhead_seconds, setup_breakdown,
+ *   teardown_overhead_seconds, teardown_breakdown,
+ *   num_exposures, exposure_time, lamp_on, calibration_filter,
+ *   allocated_units, plan_ids, too_count, contains_too
+ *
+ * opts:
+ *   feasibleCount  — if set, show a "Feasible plans" row
+ *   footerChips    — array of {label, value} rendered as chips in a footer bar
+ */
+function renderBatchCard(batch, opts = {}) {
+  const tooCount = batch.too_count ?? 0;
+  const containsToo = batch.contains_too ?? tooCount > 0;
+
+  const card = document.createElement("article");
+  card.className = `batch-card${containsToo ? " batch-card-too" : ""}`;
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "batch-card-header";
+  const title = document.createElement("h3");
+  title.textContent = `${batch.instrument ?? "—"}${batch.disperser ? ` / ${batch.disperser}` : ""}`;
+  header.append(title);
+  if (containsToo) {
+    const tooPill = document.createElement("span");
+    tooPill.className = "pill too";
+    tooPill.textContent = "ToO";
+    header.append(tooPill);
+  }
+  card.append(header);
+
+  // Rows
+  const rows = document.createElement("div");
+  rows.className = "batch-card-rows";
+
+  // Time window
+  const start = batch.predicted_start ?? batch.batch_start ?? null;
+  const end = batch.predicted_end ?? batch.batch_end ?? null;
+  if (start || end) {
+    rows.append(makeBatchCardRow("Window", `${formatDateTime(start)} – ${formatDateTime(end)}`));
+  }
+
+  // Duration
+  const durSeconds = batch.predicted_duration_seconds ?? batch.duration_seconds ?? null;
+  if (durSeconds != null) {
+    rows.append(makeBatchCardRow("Duration", formatMinutesSeconds(durSeconds)));
+  }
+
+  // Setup overhead
+  const setupSeconds = Number(batch.setup_overhead_seconds ?? 0);
+  if (setupSeconds > 0) {
+    rows.append(makeBatchCardRow("Setup overhead", formatMinutesSeconds(setupSeconds)));
+    const bd = batch.setup_breakdown ?? {};
+    const breakdownParts = [
+      bd.spectrograph_switch_seconds > 0 && `spectrograph ${formatMinutesSeconds(bd.spectrograph_switch_seconds)}`,
+      bd.grating_move_seconds > 0 && `grating ${formatMinutesSeconds(bd.grating_move_seconds)}`,
+      bd.lamp_warmup_seconds > 0 && `lamp warmup ${formatMinutesSeconds(bd.lamp_warmup_seconds)}`,
+      bd.lamp_cooldown_seconds > 0 && `lamp cooldown ${formatMinutesSeconds(bd.lamp_cooldown_seconds)}`,
+      bd.autofocus_seconds > 0 && `autofocus ${formatMinutesSeconds(bd.autofocus_seconds)}`,
+      bd.acquire_and_guide_seconds > 0 && `Acquire+Guide ${formatMinutesSeconds(bd.acquire_and_guide_seconds)}`,
+    ].filter(Boolean);
+    if (breakdownParts.length > 0) {
+      rows.append(makeBatchCardBreakdown(breakdownParts));
+    }
+  }
+
+  // Exposures
+  if (batch.num_exposures != null && batch.exposure_time != null) {
+    rows.append(makeBatchCardRow("Exposures", `${batch.num_exposures} × ${batch.exposure_time}s`));
+  }
+
+  // Lamp
+  if (batch.lamp_on != null) {
+    rows.append(makeBatchCardRow("Lamp", batch.lamp_on ? "on" : "off"));
+  }
+
+  // Cal filter
+  if (batch.calibration_filter) {
+    rows.append(makeBatchCardRow("Cal filter", batch.calibration_filter));
+  }
+
+  // Teardown
+  const readout = batch.teardown_breakdown?.readout_seconds ?? 0;
+  if (readout > 0) {
+    rows.append(makeBatchCardRow("Teardown (readout)", formatMinutesSeconds(readout)));
+  }
+
+  // Units
+  rows.append(makeBatchCardRow("Units", (batch.allocated_units ?? []).join(", ") || "—"));
+
+  // Plans
+  rows.append(makeBatchCardRow("Plans", (batch.plan_ids ?? []).join(", ") || "—"));
+
+  // ToO count
+  if (containsToo) {
+    rows.append(makeBatchCardRow("ToO plans", tooCount));
+  }
+
+  // Feasible count (optional)
+  if (opts.feasibleCount != null) {
+    rows.append(makeBatchCardRow("Feasible plans", opts.feasibleCount));
+  }
+
+  card.append(rows);
+
+  // Footer chips
+  if (opts.footerChips && opts.footerChips.length > 0) {
+    const footer = document.createElement("div");
+    footer.className = "batch-card-footer";
+    for (const chip of opts.footerChips) {
+      const chipEl = document.createElement("span");
+      chipEl.className = `trace-chip ${chip.className ?? "chip-neutral"}`;
+      chipEl.textContent = `${chip.label}: ${chip.value}`;
+      footer.append(chipEl);
+    }
+    card.append(footer);
+  }
+
+  return card;
+}
+
 function renderSummary(target, rows) {
   const list = document.createElement("div");
   list.className = "summary-list";
@@ -336,19 +483,9 @@ function renderImmediate(data) {
     pillStatus,
   );
   elements.immediateSummary.className = "";
-  const summaryRows = [
-    ["Feasible plans", data.feasible_plan_count],
-    ["Batch", batch.ulid ?? "Created"],
-    ["Instrument", batch.instrument],
-    ["Disperser", batch.disperser],
-    ["Exposure time", batch.exposure_time],
-    ["Exposures", batch.num_exposures],
-    ["Allocated units", (batch.allocated_units ?? []).join(", ")],
-  ];
-  if (containsToo) {
-    summaryRows.push(["ToO plans", tooCount]);
-  }
-  renderSummary(elements.immediateSummary, summaryRows);
+  elements.immediateSummary.replaceChildren(
+    renderBatchCard(batch, { feasibleCount: data.feasible_plan_count }),
+  );
   renderTrace(data.trace, "Immediate");
 }
 
@@ -366,53 +503,7 @@ function renderPrediction(data) {
   ]);
 
   for (const batch of batches.slice(0, PREDICTION_BATCH_LIMIT)) {
-    const item = document.createElement("article");
-    const tooCount = batch.too_count ?? 0;
-    const containsToo = batch.contains_too ?? tooCount > 0;
-    item.className = `prediction-batch${containsToo ? " prediction-batch-too" : ""}`;
-    const title = document.createElement("h3");
-    title.textContent = `${batch.instrument}${batch.disperser ? ` / ${batch.disperser}` : ""}`;
-    const meta = document.createElement("div");
-    meta.className = "batch-meta";
-    const overheadRows = [];
-    if (batch.setup_overhead_seconds > 0) {
-      overheadRows.push(`Setup overhead: ${formatMinutesSeconds(batch.setup_overhead_seconds)}`);
-      const bd = batch.setup_breakdown ?? {};
-      const breakdownParts = [
-        bd.spectrograph_switch_seconds > 0 && `spectrograph ${formatMinutesSeconds(bd.spectrograph_switch_seconds)}`,
-        bd.grating_move_seconds > 0 && `grating ${formatMinutesSeconds(bd.grating_move_seconds)}`,
-        bd.lamp_warmup_seconds > 0 && `lamp warmup ${formatMinutesSeconds(bd.lamp_warmup_seconds)}`,
-        bd.lamp_cooldown_seconds > 0 && `lamp cooldown ${formatMinutesSeconds(bd.lamp_cooldown_seconds)}`,
-        bd.autofocus_seconds > 0 && `autofocus ${formatMinutesSeconds(bd.autofocus_seconds)}`,
-        bd.acquire_and_guide_seconds > 0 && `Acquire+Guide ${formatMinutesSeconds(bd.acquire_and_guide_seconds)}`,
-      ].filter(Boolean);
-      if (breakdownParts.length > 0) {
-        overheadRows.push(`  ↳ ${breakdownParts.join(", ")}`);
-      }
-    }
-    const teardownRows = [];
-    const readout = batch.teardown_breakdown?.readout_seconds ?? 0;
-    if (readout > 0) {
-      teardownRows.push(`Teardown: ${formatMinutesSeconds(readout)}`);
-    }
-    for (const value of [
-      `${formatDateTime(batch.predicted_start)} - ${formatDateTime(batch.predicted_end)}`,
-      formatDuration(batch.predicted_duration_seconds),
-      `${batch.num_exposures} x ${batch.exposure_time}s`,
-      batch.lamp_on != null ? `Lamp: ${batch.lamp_on ? "on" : "off"}` : null,
-      batch.calibration_filter ? `Cal filter: ${batch.calibration_filter}` : null,
-      containsToo ? `ToO plans: ${tooCount}` : null,
-      ...overheadRows,
-      ...teardownRows,
-      `Units: ${(batch.allocated_units ?? []).join(", ") || "-"}`,
-      `Plans: ${(batch.plan_ids ?? []).join(", ") || "-"}`,
-    ].filter((v) => v != null)) {
-      const itemMeta = document.createElement("span");
-      itemMeta.textContent = value;
-      meta.append(itemMeta);
-    }
-    item.append(title, meta);
-    elements.predictionList.append(item);
+    elements.predictionList.append(renderBatchCard(batch));
   }
 
   if (batches.length > PREDICTION_BATCH_LIMIT) {
@@ -743,100 +834,43 @@ function renderPredictedTrace(trace) {
 
     const block = document.createElement("article");
     block.className = `trace-iteration${containsToo ? " trace-iteration-too" : ""}`;
-    const title = document.createElement("h3");
-    title.textContent = `Iteration ${iteration.iteration}`;
-    block.append(title);
+    const iterTitle = document.createElement("h3");
+    iterTitle.textContent = `Iteration ${iteration.iteration}`;
+    block.append(iterTitle);
+
+    // Build a batch-shaped object from iteration fields for renderBatchCard.
+    const build = immediateTrace.build ?? {};
+    const iterBatch = {
+      instrument: build.instrument ?? null,
+      disperser: build.disperser ?? null,
+      predicted_start: iteration.batch_start,
+      predicted_end: iteration.batch_end,
+      predicted_duration_seconds: iteration.duration_seconds,
+      setup_overhead_seconds: iteration.setup_overhead_seconds,
+      setup_breakdown: iteration.setup_breakdown,
+      teardown_overhead_seconds: iteration.teardown_overhead_seconds,
+      teardown_breakdown: iteration.teardown_breakdown,
+      num_exposures: iteration.num_exposures,
+      exposure_time: iteration.exposure_time,
+      allocated_units: build.allocated_units_by_plan
+        ? [...new Set(Object.values(build.allocated_units_by_plan).flat())]
+        : [],
+      plan_ids: build.final_plan_ids ?? [],
+      too_count: containsToo ? 1 : 0,
+      contains_too: containsToo,
+    };
+    const remainingCount = (iteration.remaining_plan_ids_after_iteration ?? []).length;
+    const totalBatchSeconds =
+      Number(iteration.setup_overhead_seconds ?? 0) +
+      Number(iteration.duration_seconds ?? 0) +
+      Number(iteration.teardown_overhead_seconds ?? 0);
     block.append(
-      traceButton(
-        `Window ${formatDateTime(iteration.batch_start)} - ${formatDateTime(iteration.batch_end)}`,
-        iteration,
-      ),
-    );
-    const setupSeconds = Number(iteration.setup_overhead_seconds ?? 0);
-    const bd = iteration.setup_breakdown ?? {};
-    const setupBreakdownLines = [
-      bd.spectrograph_switch_seconds > 0 &&
-      `Spectrograph switch: ${Math.round(bd.spectrograph_switch_seconds)}s`,
-      bd.grating_move_seconds > 0 &&
-      `Grating move: ${Math.round(bd.grating_move_seconds)}s`,
-      bd.lamp_warmup_seconds > 0 &&
-      `Lamp warmup: ${Math.round(bd.lamp_warmup_seconds)}s`,
-      bd.lamp_cooldown_seconds > 0 &&
-      `Lamp cooldown: ${Math.round(bd.lamp_cooldown_seconds)}s`,
-      bd.autofocus_seconds > 0 && `Autofocus: ${Math.round(bd.autofocus_seconds)}s`,
-      bd.acquire_and_guide_seconds > 0 &&
-      `Acquire+Guide: ${Math.round(bd.acquire_and_guide_seconds)}s`,
-    ].filter(Boolean);
-
-    const teardownSeconds = Number(iteration.teardown_overhead_seconds ?? 0);
-    const tbd = iteration.teardown_breakdown ?? {};
-    const teardownBreakdownLines = [tbd.readout_seconds > 0 && `Readout: ${Math.round(tbd.readout_seconds)}s`].filter(Boolean);
-
-    const durationSeconds = Number(iteration.duration_seconds ?? 0);
-    const numExposures = Number(iteration.num_exposures ?? 0);
-    const exposureTime = Number(iteration.exposure_time ?? 0);
-    const totalBatchSeconds = setupSeconds + durationSeconds + teardownSeconds;
-
-    const batchDurationLabel = "Batch duration";
-    const tooltipElement = document.createElement("div");
-    tooltipElement.className = "trace-tooltip";
-
-    // Header + indented breakdown lines, using real DOM so headers can be bold.
-    const setupHeader = document.createElement("strong");
-    setupHeader.textContent = `Setup (${formatMinutesSeconds(setupSeconds)})`;
-    tooltipElement.append(setupHeader, document.createElement("br"));
-    for (const line of setupBreakdownLines) {
-      const indented = document.createElement("div");
-      indented.className = "trace-tooltip-indented";
-      indented.style.paddingLeft = "0.85rem";
-      indented.textContent = line;
-      tooltipElement.append(indented);
-    }
-
-    tooltipElement.append(document.createElement("br"));
-
-    const opHeader = document.createElement("strong");
-    opHeader.textContent = `Operation (${formatMinutesSeconds(durationSeconds)})`;
-    tooltipElement.append(opHeader, document.createElement("br"));
-    const exposureLine = document.createElement("div");
-    exposureLine.className = "trace-tooltip-indented";
-    exposureLine.style.paddingLeft = "0.85rem";
-    exposureLine.textContent = `Exposure: ${numExposures} x ${Math.round(exposureTime)}s`;
-    tooltipElement.append(exposureLine);
-
-    const exposureDurationLine = document.createElement("div");
-    exposureDurationLine.className = "trace-tooltip-indented";
-    exposureDurationLine.style.paddingLeft = "0.85rem";
-    exposureDurationLine.textContent = `Exposure duration: ${formatMinutesSeconds(durationSeconds)}`;
-    tooltipElement.append(exposureDurationLine);
-
-    tooltipElement.append(document.createElement("br"));
-
-    const teardownHeader = document.createElement("strong");
-    teardownHeader.textContent = `Teardown (${formatMinutesSeconds(teardownSeconds)})`;
-    tooltipElement.append(teardownHeader, document.createElement("br"));
-    for (const line of teardownBreakdownLines) {
-      const indented = document.createElement("div");
-      indented.className = "trace-tooltip-indented";
-      indented.style.paddingLeft = "0.85rem";
-      indented.textContent = line;
-      tooltipElement.append(indented);
-    }
-
-    block.append(
-      makeTraceChips([
-        {
-          label: batchDurationLabel,
-          value: formatMinutesSeconds(totalBatchSeconds),
-          className: "chip-kept",
-          tooltipElement,
-        },
-        {
-          label: "Remaining plans",
-          value: (iteration.remaining_plan_ids_after_iteration ?? []).length,
-          className: "chip-neutral",
-        },
-      ]),
+      renderBatchCard(iterBatch, {
+        footerChips: [
+          { label: "Batch duration", value: formatMinutesSeconds(totalBatchSeconds), className: "chip-kept" },
+          { label: "Remaining plans", value: remainingCount, className: "chip-neutral" },
+        ],
+      }),
     );
     block.append(renderImmediateTrace(iteration.immediate_trace ?? {}));
     wrapper.append(block);

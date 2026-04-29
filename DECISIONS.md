@@ -1,5 +1,13 @@
 # Decisions
 
+## [2026-04-29] Unified batch card UI component
+
+**Why:** Immediate Batch, Night Prediction, and Trace iterations each rendered batch information in different ad-hoc ways — a key-value summary list, loose `<span>` chips, and timing chips with tooltip. There was no shared visual language and the Immediate Batch response was missing fields (lamp, cal filter, plan IDs, setup/teardown overhead) that Prediction already exposed.
+
+**What:** Added a `renderBatchCard(batch, opts)` function in `app.js` that renders a consistent `<article class="batch-card">` with rows for all batch parameters. All three sections now use this function. Extended `ImmediateBatch` with the missing fields (`lamp_on`, `calibration_filter`, `plan_ids`, `predicted_duration_seconds`, setup/teardown breakdown) and updated `_build_immediate_response()` to compute and populate them. Trace iterations extract instrument/disperser from `immediate_trace.build` and show a chip footer bar for duration and remaining-plans count.
+
+**Implications:** `ImmediateBatch` response schema is expanded but all new fields are optional/defaulted — no breaking change. The old `.prediction-batch` and `.batch-meta` CSS classes remain (used by existing HTML articles in the predict list, now replaced by `.batch-card`). The `_compute_setup_overhead` and `_compute_teardown` builder functions are now imported and called from `routes.py`.
+
 ## [2026-04-29] Advance clock through the night when no batch is emitted
 
 **Why:** The scheduler was hard-breaking on the first `batch is None` result. This caused the predicted loop to stop exploring the night whenever all current plans were temporarily infeasible (e.g. airmass window not yet open, moon just risen). Plans that would become feasible later in the night were never discovered.

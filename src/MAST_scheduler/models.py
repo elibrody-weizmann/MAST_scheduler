@@ -65,6 +65,14 @@ class ImmediateBatch(BaseModel):
     allocated_units: list[str]
     too_count: int = 0
     contains_too: bool = False
+    lamp_on: bool | None = None
+    calibration_filter: str | None = None
+    plan_ids: list[str] = Field(default_factory=list)
+    predicted_duration_seconds: float | None = None
+    setup_overhead_seconds: float = 0.0
+    setup_breakdown: SetupBreakdown = Field(default_factory=SetupBreakdown)
+    teardown_overhead_seconds: float = 0.0
+    teardown_breakdown: TeardownBreakdown = Field(default_factory=TeardownBreakdown)
 
 
 class ImmediateResponse(BaseModel):
