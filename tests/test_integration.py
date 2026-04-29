@@ -769,9 +769,53 @@ class TestAPI:
         data = response.json()
         assert data["predicted_batches"] == []
         assert data["trace"] is not None
-        assert len(data["trace"]["iterations"]) == 1
-        first_iteration = data["trace"]["iterations"][0]
-        assert first_iteration["duration_seconds"] == 0.0
-        assert first_iteration["num_exposures"] == 0
-        assert first_iteration["exposure_time"] == 0.0
-        assert first_iteration["immediate_trace"]["final_plan_ids"] == []
+        # Clock advances through the night — expect multiple no-batch iterations
+        assert len(data["trace"]["iterations"]) >= 1
+        for it in data["trace"]["iterations"]:
+            assert it["duration_seconds"] == 0.0
+            assert it["num_exposures"] == 0
+            assert it["exposure_time"] == 0.0
+            assert it["immediate_trace"]["final_plan_ids"] == []
+
+    def test_predict_advances_clock_through_night_when_no_batch(self):
+        """When no batch is emitted each iteration, the loop must advance the clock
+        through the full night rather than stopping at the first no-batch result."""
+        config = SchedulerConfig(no_batch_advance_seconds=3600.0)
+        scheduler = Scheduler(config=config)
+        night_start = datetime(2026, 4, 27, 20, 0, tzinfo=UTC)
+        night_end = datetime(2026, 4, 28, 2, 0, tzinfo=UTC)  # 6-hour night
+
+        obs = MagicMock(spec=Observer)
+        # Night filter passes; quorum blocks all plans (operational_units=[])
+        obs.is_night.return_value = True
+        obs.moon_illumination.return_value = 0.05
+        moon_altaz = MagicMock()
+        moon_altaz.alt = MagicMock()
+        moon_altaz.az = MagicMock()
+        moon_altaz.frame = MagicMock()
+        obs.moon_altaz.return_value = moon_altaz
+        obs.tonight.return_value = (
+            MagicMock(to_datetime=lambda timezone: night_start),
+            MagicMock(to_datetime=lambda timezone: night_end),
+        )
+
+        with (
+            patch("MAST_scheduler.filters.Observer", return_value=obs),
+            patch("MAST_scheduler.scheduler.Observer", return_value=obs),
+        ):
+            batches, trace = scheduler.make_predicted_batches_with_trace(
+                [load_plan("minimal")],
+                site=WIS_LOCATION,
+                start_datetime=night_start,
+                operational_units=[],  # quorum=1 required, 0 available → all plans blocked
+            )
+
+        assert batches == []
+        # 6-hour night / 1-hour advance = 6 iterations
+        assert len(trace.iterations) == 6
+        # Each iteration advances the clock by no_batch_advance_seconds
+        for i, it in enumerate(trace.iterations):
+            expected_start = night_start + timedelta(hours=i)
+            expected_end = night_start + timedelta(hours=i + 1)
+            assert it.batch_start == expected_start
+            assert it.batch_end == expected_end

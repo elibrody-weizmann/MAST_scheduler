@@ -1,5 +1,13 @@
 # Decisions
 
+## [2026-04-29] Advance clock through the night when no batch is emitted
+
+**Why:** The scheduler was hard-breaking on the first `batch is None` result. This caused the predicted loop to stop exploring the night whenever all current plans were temporarily infeasible (e.g. airmass window not yet open, moon just risen). Plans that would become feasible later in the night were never discovered.
+
+**What:** When `make_immediate_batch_with_trace` returns `None`, the predict loop now advances `current_time` by `SchedulerConfig.no_batch_advance_seconds` (default 15 min) and continues. The trace records each gap iteration with `batch_start`/`batch_end` reflecting the skipped window. The loop terminates via the existing conditions: `current_time >= night_end` or `remaining` is empty. `no_batch_advance_seconds` is configurable in `SchedulerConfig`.
+
+**Implications:** Predicted runs on a fully infeasible plan list now iterate through the whole night (up to `night_duration / no_batch_advance_seconds` iterations) rather than returning a single trace entry. Callers that inspected `len(trace.iterations) == 1` as a sentinel for "no batch" must now check `predicted_batches == []` instead.
+
 ## [2026-04-29] Predicted batches always pay full cold-start setup overhead
 
 **Why:** Predictions cannot trust the live system state, and chaining setup costs from one simulated batch to the next was effectively asserting that the prior simulated batch's instrument/disperser/lamp configuration was already in place at the start of the next one. That made the first batch of a night cheaper than every other batch and made same-instrument follow-ups artificially fast. The user-facing rule is now: every batch in a prediction is treated as starting from an unknown system state.

@@ -777,7 +777,7 @@ function renderPredictedTrace(trace) {
     const exposureTime = Number(iteration.exposure_time ?? 0);
     const totalBatchSeconds = setupSeconds + durationSeconds + teardownSeconds;
 
-    const batchDurationLabel = setupSeconds > 0 ? "Batch duration ⏱️" : "Batch duration";
+    const batchDurationLabel = "Batch duration";
     const tooltipElement = document.createElement("div");
     tooltipElement.className = "trace-tooltip";
 

@@ -16,6 +16,7 @@ class SchedulerConfig(BaseModel):
     twilight_type: str = "astronomical"  # astronomical | nautical | civil
     spectrograph_switch_time: float = 120.0
     grating_stage_move_time: float = 30.0
+    no_batch_advance_seconds: float = 900.0  # clock skip when no batch is emitted
 
     # Unit-side acquisition + guiding estimate inputs (seconds).
     #

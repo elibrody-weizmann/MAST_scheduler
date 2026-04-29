@@ -134,12 +134,13 @@ class Scheduler:
                 environment=environment,
             )
             if batch is None:
+                next_time = _advance(current_time, self.config.no_batch_advance_seconds)
                 iteration += 1
                 trace.iterations.append(
                     PredictedIterationTrace(
                         iteration=iteration,
                         batch_start=current_time,
-                        batch_end=current_time,
+                        batch_end=next_time,
                         setup_overhead_seconds=0.0,
                         duration_seconds=0.0,
                         num_exposures=0,
@@ -148,7 +149,8 @@ class Scheduler:
                         remaining_plan_ids_after_iteration=[_plan_id(plan) for plan in remaining],
                     )
                 )
-                break
+                current_time = next_time
+                continue
 
             setup_overhead, setup_breakdown = _compute_setup_overhead(batch, self.config)
             current_time = _advance(current_time, setup_overhead)
