@@ -383,6 +383,7 @@ function renderPrediction(data) {
         bd.lamp_warmup_seconds > 0 && `lamp warmup ${formatMinutesSeconds(bd.lamp_warmup_seconds)}`,
         bd.lamp_cooldown_seconds > 0 && `lamp cooldown ${formatMinutesSeconds(bd.lamp_cooldown_seconds)}`,
         bd.autofocus_seconds > 0 && `autofocus ${formatMinutesSeconds(bd.autofocus_seconds)}`,
+        bd.acquire_and_guide_seconds > 0 && `Acquire+Guide ${formatMinutesSeconds(bd.acquire_and_guide_seconds)}`,
       ].filter(Boolean);
       if (breakdownParts.length > 0) {
         overheadRows.push(`  ↳ ${breakdownParts.join(", ")}`);
@@ -762,6 +763,8 @@ function renderPredictedTrace(trace) {
       bd.lamp_cooldown_seconds > 0 &&
       `Lamp cooldown: ${Math.round(bd.lamp_cooldown_seconds)}s`,
       bd.autofocus_seconds > 0 && `Autofocus: ${Math.round(bd.autofocus_seconds)}s`,
+      bd.acquire_and_guide_seconds > 0 &&
+      `Acquire+Guide: ${Math.round(bd.acquire_and_guide_seconds)}s`,
     ].filter(Boolean);
 
     const teardownSeconds = Number(iteration.teardown_overhead_seconds ?? 0);

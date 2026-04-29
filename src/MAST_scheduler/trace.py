@@ -22,6 +22,7 @@ class SetupBreakdown(BaseModel):
     lamp_warmup_seconds: float = 0.0
     lamp_cooldown_seconds: float = 0.0
     autofocus_seconds: float = 0.0
+    acquire_and_guide_seconds: float = 0.0
     total_seconds: float = 0.0
 
 

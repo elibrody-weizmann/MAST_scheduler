@@ -10,7 +10,12 @@ from astropy.time import Time
 from common.models.batches import BatchData
 from common.models.plans import Plan
 
-from .builder import BatchBuilder, _compute_setup_overhead, _compute_teardown
+from .builder import (
+    BatchBuilder,
+    _compute_initial_setup_overhead,
+    _compute_setup_overhead,
+    _compute_teardown,
+)
 from .config import SchedulerConfig
 from .filters import PlanFilter
 from .models import EnvironmentConditions, PredictedBatch, SetupBreakdown, TeardownBreakdown
@@ -147,15 +152,18 @@ class Scheduler:
                 )
                 break
 
-            setup_overhead = 0.0
-            setup_breakdown = SetupBreakdown()
-            if previous_batch is not None:
+            if previous_batch is None:
+                setup_overhead, setup_breakdown = _compute_initial_setup_overhead(
+                    batch, self.config
+                )
+            else:
                 setup_overhead, setup_breakdown = _compute_setup_overhead(
                     previous_batch, batch, self.config
                 )
-                current_time = _advance(current_time, setup_overhead)
-                if current_time >= night_end:
-                    break
+
+            current_time = _advance(current_time, setup_overhead)
+            if current_time >= night_end:
+                break
 
             duration = batch.predicted_duration or 0.0
             teardown_overhead, teardown_breakdown = _compute_teardown(batch, self.config)

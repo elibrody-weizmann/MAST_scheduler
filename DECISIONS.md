@@ -1,5 +1,15 @@
 # Decisions
 
+## [2026-04-29] Model unit-side Acquire+Guide in startup overhead
+
+**Why:** Startup estimation previously treated `timeout_to_guiding` as an opaque plan timeout and did not expose a concrete unit-side “Acquire+Guide” component in setup breakdowns. This made predicted startup timing less representative of real unit behavior and hid a crucial contributor in UI/trace outputs.
+
+**What:** Added a scheduler-level `acquire_and_guide_seconds` estimate (derived from unit acquisition/guiding defaults and known fixed sleeps) in `SchedulerConfig`. `SetupBreakdown` now includes `acquire_and_guide_seconds`, and setup total includes it. Predicted batch `duration_seconds` was narrowed to exposure-only (`exposure_duration * num_exposures`), while startup work moved into setup overhead. The first predicted batch now computes initial setup overhead instead of forcing setup to zero. Frontend setup breakdown rendering now includes `Acquire+Guide` in both prediction cards and trace iteration tooltip breakdowns.
+
+**Implications:** Startup estimation is now explicit and compositional: setup (including Acquire+Guide) + operation (exposure) + teardown (readout). `timeout_to_guiding` is no longer used as the prediction runtime component. Any future calibration of Acquire/Guide timing should update scheduler config inputs rather than reintroducing timeout-based duration modeling.
+
+---
+
 
 ## [2026-04-29] Fold setup/teardown into batch duration trace chip
 

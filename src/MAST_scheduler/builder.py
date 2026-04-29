@@ -87,7 +87,12 @@ def _compute_setup_overhead(
     next_batch: BatchData,
     config: SchedulerConfig,
 ) -> tuple[float, SetupBreakdown]:
-    """Return inter-batch setup cost in seconds with a per-component breakdown."""
+    """Return per-batch setup cost in seconds with a per-component breakdown.
+
+    This includes both:
+    - inter-batch transitions (spectrograph/lamp/grating changes), and
+    - per-batch startup work before exposures (autofocus, acquire+guide).
+    """
     breakdown = SetupBreakdown()
 
     prev_instrument = str(previous.spec_assignment.instrument) if previous.spec_assignment else ""
@@ -128,12 +133,46 @@ def _compute_setup_overhead(
     if any(getattr(p, "autofocus", False) for p in next_batch.plans):
         breakdown.autofocus_seconds = config.autofocus_time
 
+    breakdown.acquire_and_guide_seconds = config.acquire_and_guide_seconds
+
     breakdown.total_seconds = (
         breakdown.spectrograph_switch_seconds
         + breakdown.grating_move_seconds
         + breakdown.lamp_warmup_seconds
         + breakdown.lamp_cooldown_seconds
         + breakdown.autofocus_seconds
+        + breakdown.acquire_and_guide_seconds
+    )
+    return breakdown.total_seconds, breakdown
+
+
+def _compute_initial_setup_overhead(
+    next_batch: BatchData,
+    config: SchedulerConfig,
+) -> tuple[float, SetupBreakdown]:
+    """Return initial setup cost in seconds for the first batch of a night.
+
+    Since we don't know the prior system state, this captures per-batch startup
+    work that must happen before exposures, plus one-way setup actions that are
+    safe to assume when requested (e.g. lamp warmup if lamp is requested on).
+    """
+    breakdown = SetupBreakdown()
+
+    if (
+        next_batch.spec_assignment
+        and next_batch.spec_assignment.calibration
+        and bool(next_batch.spec_assignment.calibration.lamp_on)
+    ):
+        breakdown.lamp_warmup_seconds = config.lamp_warmup_time
+
+    if any(getattr(p, "autofocus", False) for p in next_batch.plans):
+        breakdown.autofocus_seconds = config.autofocus_time
+
+    breakdown.acquire_and_guide_seconds = config.acquire_and_guide_seconds
+    breakdown.total_seconds = (
+        breakdown.lamp_warmup_seconds
+        + breakdown.autofocus_seconds
+        + breakdown.acquire_and_guide_seconds
     )
     return breakdown.total_seconds, breakdown
 
@@ -476,9 +515,6 @@ def _plan_id(plan: Plan) -> str:
 def _make_scheduled_batch(
     plans: list[Plan], batch_exp: float, config: SchedulerConfig
 ) -> BatchData:
-    autofocus_duration = config.autofocus_time if any(p.autofocus for p in plans) else 0.0
-    max_timeout = max((p.timeout_to_guiding or 0) for p in plans)
-
     num_exposures = max(
         (
             p.target.requested_number_of_exposures
@@ -520,5 +556,5 @@ def _make_scheduled_batch(
         spec_assignment=spec_assignment,
         exposure_duration=batch_exp,
         number_of_exposures=num_exposures,
-        predicted_duration=autofocus_duration + max_timeout + batch_exp * num_exposures,
+        predicted_duration=batch_exp * num_exposures,
     )
