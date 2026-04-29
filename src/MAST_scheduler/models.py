@@ -122,12 +122,29 @@ class PredictedScheduleTrace(BaseModel):
     night_end: datetime | None = None
 
 
+class SetupBreakdown(BaseModel):
+    spectrograph_switch_seconds: float = 0.0
+    grating_move_seconds: float = 0.0
+    lamp_warmup_seconds: float = 0.0
+    lamp_cooldown_seconds: float = 0.0
+    autofocus_seconds: float = 0.0
+    total_seconds: float = 0.0
+
+
+class TeardownBreakdown(BaseModel):
+    readout_seconds: float = 0.0
+    total_seconds: float = 0.0
+
+
 class PredictedBatch(BaseModel):
     ulid: str
     predicted_start: datetime
     predicted_end: datetime
     predicted_duration_seconds: float
     setup_overhead_seconds: float = 0.0
+    setup_breakdown: SetupBreakdown = SetupBreakdown()
+    teardown_overhead_seconds: float = 0.0
+    teardown_breakdown: TeardownBreakdown = TeardownBreakdown()
     plan_ids: list[str]
     instrument: str
     disperser: str | None

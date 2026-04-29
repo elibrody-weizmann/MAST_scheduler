@@ -7,7 +7,7 @@ from common.models.highspec import HighspecSettings
 from common.models.spectrographs import SpectrographModel
 from ulid import ULID
 
-from MAST_scheduler.builder import _compute_setup_overhead
+from MAST_scheduler.builder import _compute_setup_overhead, _compute_teardown
 from MAST_scheduler.config import SchedulerConfig
 
 from .conftest import load_plan
@@ -50,45 +50,80 @@ class TestComputeSetupOverhead:
     def test_no_overhead_same_instrument_no_lamp_change(self, config):
         prev = _batch("deepspec")
         nxt = _batch("deepspec")
-        assert _compute_setup_overhead(prev, nxt, config) == 0.0
+        overhead, _ = _compute_setup_overhead(prev, nxt, config)
+        assert overhead ==0.0
 
     def test_no_overhead_same_highspec_disperser(self, config):
         prev = _batch("highspec", disperser="Ca")
         nxt = _batch("highspec", disperser="Ca")
-        assert _compute_setup_overhead(prev, nxt, config) == 0.0
+        overhead, _ = _compute_setup_overhead(prev, nxt, config)
+        assert overhead ==0.0
 
     def test_spectrograph_switch_deepspec_to_highspec(self, config):
         prev = _batch("deepspec")
         nxt = _batch("highspec", disperser="Ca")
-        assert _compute_setup_overhead(prev, nxt, config) == config.spectrograph_switch_time
+        overhead, _ = _compute_setup_overhead(prev, nxt, config)
+        assert overhead ==config.spectrograph_switch_time
 
     def test_spectrograph_switch_highspec_to_deepspec(self, config):
         prev = _batch("highspec", disperser="Ca")
         nxt = _batch("deepspec")
-        assert _compute_setup_overhead(prev, nxt, config) == config.spectrograph_switch_time
+        overhead, _ = _compute_setup_overhead(prev, nxt, config)
+        assert overhead ==config.spectrograph_switch_time
 
     def test_grating_stage_move_different_disperser(self, config):
         prev = _batch("highspec", disperser="Ca")
         nxt = _batch("highspec", disperser="Mg")
-        assert _compute_setup_overhead(prev, nxt, config) == config.grating_stage_move_time
+        overhead, _ = _compute_setup_overhead(prev, nxt, config)
+        assert overhead ==config.grating_stage_move_time
 
     def test_lamp_warmup(self, config):
         prev = _batch("deepspec", lamp_on=False)
         nxt = _batch("deepspec", lamp_on=True)
-        assert _compute_setup_overhead(prev, nxt, config) == config.lamp_warmup_time
+        overhead, _ = _compute_setup_overhead(prev, nxt, config)
+        assert overhead ==config.lamp_warmup_time
 
     def test_lamp_cooldown(self, config):
         prev = _batch("deepspec", lamp_on=True)
         nxt = _batch("deepspec", lamp_on=False)
-        assert _compute_setup_overhead(prev, nxt, config) == config.lamp_cooldown_time
+        overhead, _ = _compute_setup_overhead(prev, nxt, config)
+        assert overhead ==config.lamp_cooldown_time
 
     def test_combined_switch_and_lamp_warmup(self, config):
         prev = _batch("deepspec", lamp_on=False)
         nxt = _batch("highspec", disperser="Ca", lamp_on=True)
         expected = config.spectrograph_switch_time + config.lamp_warmup_time
-        assert _compute_setup_overhead(prev, nxt, config) == expected
+        overhead, _ = _compute_setup_overhead(prev, nxt, config)
+        assert overhead ==expected
 
     def test_no_lamp_change_when_both_on(self, config):
         prev = _batch("deepspec", lamp_on=True)
         nxt = _batch("deepspec", lamp_on=True)
-        assert _compute_setup_overhead(prev, nxt, config) == 0.0
+        overhead, _ = _compute_setup_overhead(prev, nxt, config)
+        assert overhead == 0.0
+
+    def test_setup_breakdown_fields(self, config):
+        prev = _batch("deepspec", lamp_on=False)
+        nxt = _batch("highspec", disperser="Ca", lamp_on=True)
+        overhead, bd = _compute_setup_overhead(prev, nxt, config)
+        assert bd.spectrograph_switch_seconds == config.spectrograph_switch_time
+        assert bd.lamp_warmup_seconds == config.lamp_warmup_time
+        assert bd.grating_move_seconds == 0.0
+        assert bd.autofocus_seconds == 0.0
+        assert bd.total_seconds == overhead
+
+    def test_setup_breakdown_grating_move(self, config):
+        prev = _batch("highspec", disperser="Ca")
+        nxt = _batch("highspec", disperser="Mg")
+        overhead, bd = _compute_setup_overhead(prev, nxt, config)
+        assert bd.grating_move_seconds == config.grating_stage_move_time
+        assert bd.total_seconds == overhead
+
+
+class TestComputeTeardown:
+    def test_teardown_includes_readout(self, config):
+        batch = _batch("deepspec")
+        overhead, bd = _compute_teardown(batch, config)
+        assert bd.readout_seconds == config.readout_time
+        assert bd.total_seconds == config.readout_time
+        assert overhead == config.readout_time

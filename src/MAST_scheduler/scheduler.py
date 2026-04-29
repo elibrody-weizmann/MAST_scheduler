@@ -10,7 +10,7 @@ from astropy.time import Time
 from common.models.batches import BatchData
 from common.models.plans import Plan
 
-from .builder import BatchBuilder, _compute_setup_overhead
+from .builder import BatchBuilder, _compute_setup_overhead, _compute_teardown
 from .config import SchedulerConfig
 from .filters import PlanFilter
 from .models import (
@@ -19,6 +19,8 @@ from .models import (
     PredictedBatch,
     PredictedIterationTrace,
     PredictedScheduleTrace,
+    SetupBreakdown,
+    TeardownBreakdown,
 )
 
 if TYPE_CHECKING:
@@ -140,16 +142,29 @@ class Scheduler:
                 break
 
             setup_overhead = 0.0
+            setup_breakdown = SetupBreakdown()
             if previous_batch is not None:
-                setup_overhead = _compute_setup_overhead(previous_batch, batch, self.config)
+                setup_overhead, setup_breakdown = _compute_setup_overhead(
+                    previous_batch, batch, self.config
+                )
                 current_time = _advance(current_time, setup_overhead)
                 if current_time >= night_end:
                     break
 
             duration = batch.predicted_duration or 0.0
-            batch_end = _advance(current_time, duration)
+            teardown_overhead, teardown_breakdown = _compute_teardown(batch, self.config)
+            batch_end = _advance(current_time, duration + teardown_overhead)
 
-            pb = _to_predicted_batch(batch, current_time, batch_end, duration, setup_overhead)
+            pb = _to_predicted_batch(
+                batch,
+                current_time,
+                batch_end,
+                duration,
+                setup_overhead,
+                setup_breakdown,
+                teardown_overhead,
+                teardown_breakdown,
+            )
             results.append(pb)
 
             for pid in pb.plan_ids:
@@ -273,6 +288,9 @@ def _to_predicted_batch(
     end: datetime,
     duration: float,
     setup_overhead: float = 0.0,
+    setup_breakdown: SetupBreakdown | None = None,
+    teardown_overhead: float = 0.0,
+    teardown_breakdown: TeardownBreakdown | None = None,
 ) -> PredictedBatch:
     from common.models.highspec import HighspecSettings
 
@@ -296,6 +314,9 @@ def _to_predicted_batch(
         predicted_end=end,
         predicted_duration_seconds=duration,
         setup_overhead_seconds=setup_overhead,
+        setup_breakdown=setup_breakdown or SetupBreakdown(),
+        teardown_overhead_seconds=teardown_overhead,
+        teardown_breakdown=teardown_breakdown or TeardownBreakdown(),
         plan_ids=[p.ulid or "" for p in batch.plans],
         instrument=instrument,
         disperser=disperser,

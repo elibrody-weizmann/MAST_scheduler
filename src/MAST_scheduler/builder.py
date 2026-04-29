@@ -23,6 +23,8 @@ from .models import (
     PriorityFactorTrace,
     PriorityGroupTrace,
     PriorityTrace,
+    SetupBreakdown,
+    TeardownBreakdown,
     TraceRationale,
 )
 
@@ -85,9 +87,9 @@ def _compute_setup_overhead(
     previous: BatchData,
     next_batch: BatchData,
     config: SchedulerConfig,
-) -> float:
-    """Return inter-batch setup cost in seconds."""
-    overhead = 0.0
+) -> tuple[float, SetupBreakdown]:
+    """Return inter-batch setup cost in seconds with a per-component breakdown."""
+    breakdown = SetupBreakdown()
 
     prev_instrument = str(previous.spec_assignment.instrument) if previous.spec_assignment else ""
     next_instrument = (
@@ -95,7 +97,7 @@ def _compute_setup_overhead(
     )
 
     if prev_instrument != next_instrument:
-        overhead += config.spectrograph_switch_time
+        breakdown.spectrograph_switch_seconds = config.spectrograph_switch_time
 
     if next_instrument == "highspec":
         ns = next_batch.spec_assignment.settings if next_batch.spec_assignment else None
@@ -107,7 +109,7 @@ def _compute_setup_overhead(
             and next_disperser is not None
             and prev_disperser != next_disperser
         ):
-            overhead += config.grating_stage_move_time
+            breakdown.grating_move_seconds = config.grating_stage_move_time
 
     prev_lamp = (
         bool(previous.spec_assignment.calibration.lamp_on)
@@ -120,14 +122,31 @@ def _compute_setup_overhead(
         else False
     )
     if not prev_lamp and next_lamp:
-        overhead += config.lamp_warmup_time
+        breakdown.lamp_warmup_seconds = config.lamp_warmup_time
     elif prev_lamp and not next_lamp:
-        overhead += config.lamp_cooldown_time
+        breakdown.lamp_cooldown_seconds = config.lamp_cooldown_time
 
     if any(getattr(p, "autofocus", False) for p in next_batch.plans):
-        overhead += config.autofocus_time
+        breakdown.autofocus_seconds = config.autofocus_time
 
-    return overhead
+    breakdown.total_seconds = (
+        breakdown.spectrograph_switch_seconds
+        + breakdown.grating_move_seconds
+        + breakdown.lamp_warmup_seconds
+        + breakdown.lamp_cooldown_seconds
+        + breakdown.autofocus_seconds
+    )
+    return breakdown.total_seconds, breakdown
+
+
+def _compute_teardown(
+    batch: BatchData,
+    config: SchedulerConfig,
+) -> tuple[float, TeardownBreakdown]:
+    """Return per-batch teardown cost in seconds with a per-component breakdown."""
+    breakdown = TeardownBreakdown(readout_seconds=config.readout_time)
+    breakdown.total_seconds = breakdown.readout_seconds
+    return breakdown.total_seconds, breakdown
 
 
 def _condition_score(
