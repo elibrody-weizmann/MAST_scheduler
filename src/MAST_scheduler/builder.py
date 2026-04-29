@@ -221,10 +221,61 @@ def _apply_exposure_cap(plans: list[Plan], batch_exp: float) -> list[Plan]:
     return result
 
 
-def _allocate_units(plan: Plan, operational_units: list[str]) -> list[str]:
+def _candidate_units_for_plan(plan: Plan, remaining_units: list[str]) -> list[str]:
     if plan.allocated_units:
-        return [u for u in plan.allocated_units if u in operational_units]
-    return list(operational_units)
+        preferred = [unit for unit in plan.allocated_units if unit in remaining_units]
+        non_preferred = [unit for unit in remaining_units if unit not in preferred]
+        return preferred + non_preferred
+    return list(remaining_units)
+
+
+def _allocate_exclusive_units(
+    plans: list[Plan],
+    operational_units: list[str],
+) -> tuple[list[Plan], dict[str, list[str]], list[DroppedPlanTrace]]:
+    remaining_units = list(operational_units)
+    allocations: dict[str, list[str]] = {}
+    kept_plans: list[Plan] = []
+    dropped: list[DroppedPlanTrace] = []
+
+    # First pass: guarantee quorum for every kept plan.
+    for plan in plans:
+        plan_id = _plan_id(plan)
+        required_quorum = int(plan.quorum)
+        candidate_units = _candidate_units_for_plan(plan, remaining_units)
+        if len(candidate_units) < required_quorum:
+            dropped.append(
+                DroppedPlanTrace(
+                    plan_id=plan_id,
+                    rationales=[
+                        TraceRationale(
+                            code="unit_capacity_exhausted",
+                            message="Insufficient unassigned operational units to satisfy quorum",
+                            values={
+                                "required_quorum": required_quorum,
+                                "available_unassigned_units": len(candidate_units),
+                            },
+                        )
+                    ],
+                )
+            )
+            continue
+        assigned = candidate_units[:required_quorum]
+        allocations[plan_id] = assigned
+        kept_plans.append(plan)
+        remaining_units = [unit for unit in remaining_units if unit not in assigned]
+
+    # Second pass: distribute any remaining units deterministically.
+    if kept_plans and remaining_units:
+        plan_ids = [_plan_id(plan) for plan in kept_plans]
+        plan_index = 0
+        while remaining_units:
+            plan_id = plan_ids[plan_index % len(plan_ids)]
+            next_unit = remaining_units.pop(0)
+            allocations[plan_id].append(next_unit)
+            plan_index += 1
+
+    return kept_plans, allocations, dropped
 
 
 class BatchBuilder:
@@ -398,11 +449,19 @@ class BatchBuilder:
                 for plan in group
                 if plan not in viable
             ]
-            for plan in viable:
-                plan.allocated_units = _allocate_units(plan, self._operational_units)
-                build_trace.allocated_units_by_plan[_plan_id(plan)] = list(plan.allocated_units)
+            capacity_feasible, allocations, dropped_by_unit_exclusivity = _allocate_exclusive_units(
+                viable, self._operational_units
+            )
+            build_trace.dropped_by_unit_exclusivity = dropped_by_unit_exclusivity
+            if not capacity_feasible:
+                continue
 
-            batch = _make_scheduled_batch(viable, batch_exp, self._config)
+            for plan in capacity_feasible:
+                plan_id = _plan_id(plan)
+                plan.allocated_units = allocations.get(plan_id, [])
+                build_trace.allocated_units_by_plan[plan_id] = list(plan.allocated_units)
+
+            batch = _make_scheduled_batch(capacity_feasible, batch_exp, self._config)
             build_trace.final_plan_ids = [_plan_id(plan) for plan in batch.plans]
             build_trace.final_batch_ulid = str(batch.ulid)
             build_trace.predicted_duration_seconds = float(batch.predicted_duration or 0.0)

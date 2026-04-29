@@ -560,6 +560,55 @@ class TestAPI:
         assert data["batch"] is None
         assert data["feasible_plan_count"] == 0
 
+    def test_immediate_inline_enforces_exclusive_unit_assignments(self):
+        first = load_plan("minimal")
+        second = load_plan("airmass")
+        first.quorum = 1
+        second.quorum = 1
+        first.allocated_units = []
+        second.allocated_units = []
+
+        obs = MagicMock(spec=Observer)
+        obs.is_night.return_value = True
+        obs.moon_illumination.return_value = 0.05
+        moon_altaz = MagicMock()
+        moon_altaz.alt = MagicMock()
+        moon_altaz.az = MagicMock()
+        moon_altaz.frame = MagicMock()
+        obs.moon_altaz.return_value = moon_altaz
+
+        with (
+            patch("MAST_scheduler.filters._plan_skycoord") as mock_coord,
+            patch("MAST_scheduler.scheduler.Observer", return_value=obs),
+            patch("MAST_scheduler.filters.Observer", return_value=obs),
+            TestClient(app) as client,
+        ):
+            target = MagicMock()
+            target.transform_to.return_value = MagicMock(alt=MagicMock(deg=45.0))
+            target.separation.return_value = MagicMock(deg=90.0)
+            mock_coord.return_value = target
+            response = client.post(
+                "/scheduler/immediate/inline",
+                json={
+                    "plans": [first.model_dump(mode="json"), second.model_dump(mode="json")],
+                    "operational_units": ["mast01"],
+                    "site_name": "ns",
+                    "now": NOW_NIGHT.isoformat(),
+                    "include_trace": True,
+                },
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["batch"] is not None
+        batch_plan_ids = data["batch"]["plan_ids"]
+        assert len(batch_plan_ids) == 1
+        assert data["batch"]["allocated_units"] == ["mast01"]
+        build_trace = data["trace"]["build"]
+        dropped = build_trace["dropped_by_unit_exclusivity"]
+        assert dropped
+        assert dropped[0]["rationales"][0]["code"] == "unit_capacity_exhausted"
+
     def test_predict_inline_runs(self):
         minimal_plan = load_plan("minimal").model_dump(mode="json")
         with TestClient(app) as client:

@@ -1,5 +1,13 @@
 # Decisions
 
+## [2026-04-29] Enforce exclusive operational unit assignment per immediate batch
+
+**Why:** Immediate batch construction treated quorum as a per-plan feasibility check and then assigned units independently per plan, which allowed multiple plans in the same batch to reuse the same operational unit. That made some emitted batches physically infeasible under a unit-exclusivity execution model.
+
+**What:** Batch building now performs a shared-capacity allocation pass over viable plans. It first assigns quorum units from a mutable pool of remaining operational units (preferred units are considered first), drops plans that cannot meet quorum from unassigned capacity, then distributes any leftover units deterministically. A new build-trace channel (`dropped_by_unit_exclusivity`) records plans rejected for exhausted unit capacity.
+
+**Implications:** Immediate batches now guarantee that each unit appears in at most one plan's allocation within that batch. Batch size may shrink compared to previous behavior when unit capacity is tight. Trace consumers and the UI can inspect `unit_capacity_exhausted` drop rationales for explainability.
+
 ## [2026-04-29] Cap generated mock exposure durations to Plan schema limits
 
 **Why:** The `long-exposure` mock preset could emit `requested_exposure_duration` and `max_exposure_duration` values above `3600`, which broke inline scheduling payload validation against `common.models.plans.Plan`.

@@ -132,6 +132,39 @@ class TestUnitAllocation:
         assert "mast99" not in batch.plans[0].allocated_units
         assert "mast01" in batch.plans[0].allocated_units
 
+    def test_exclusive_allocation_never_reuses_unit_across_plans(self):
+        plan_a = load_plan("minimal")
+        plan_b = load_plan("airmass")
+        plan_a.quorum = 1
+        plan_b.quorum = 1
+
+        batch = build([plan_a, plan_b], units=["mast01", "mast02"])
+
+        assert batch is not None
+        assert len(batch.plans) == 2
+        allocations = [set(plan.allocated_units) for plan in batch.plans]
+        assert allocations[0].isdisjoint(allocations[1])
+
+    def test_exclusive_allocation_drops_when_remaining_capacity_cannot_meet_quorum(self):
+        first = load_plan("minimal")
+        second = load_plan("airmass")
+        first.quorum = 2
+        second.quorum = 2
+
+        batch, _, _, build_trace = BatchBuilder(
+            [first, second],
+            operational_units=["mast01", "mast02"],
+            config=SchedulerConfig(),
+        ).build_with_trace()
+
+        assert batch is not None
+        assert len(batch.plans) == 1
+        assert build_trace.dropped_by_unit_exclusivity
+        surviving_plan_id = batch.plans[0].ulid
+        dropped_plan_id = build_trace.dropped_by_unit_exclusivity[0].plan_id
+        assert {surviving_plan_id, dropped_plan_id} == {first.ulid, second.ulid}
+        assert build_trace.dropped_by_unit_exclusivity[0].rationales[0].code == "unit_capacity_exhausted"
+
 
 class TestEdgeCases:
     def test_returns_none_for_empty_plans(self):

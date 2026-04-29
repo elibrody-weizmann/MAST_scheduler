@@ -47,7 +47,7 @@ Given a list of pending `Plan` objects, a telescope site, and a set of operation
 
 1. **Filters** plans through a feasibility chain: astronomical night → time window → airmass → moon phase → moon separation → unit quorum → repeat quota
 2. **Groups** surviving plans by `(instrument, disperser)` and then splits into exposure-compatible subgroups so `max_exposure_duration` is respected during grouping; ranks groups by ToO flag, merit score, exposure time, and observing condition score (airmass, moon separation, urgency)
-3. **Builds** the highest-priority batch: negotiates exposure time, allocates units, merges calibration lamp/filter settings
+3. **Builds** the highest-priority batch: negotiates exposure time, allocates units with batch-level exclusivity, merges calibration lamp/filter settings
 4. **Simulates** a full night in predictive mode by running the filter+build loop while advancing a clock, including inter-batch setup overhead (spectrograph switch, grating stage move, lamp warmup/cooldown). The simulation start time is resolved as follows: if the given timestamp falls within the current ongoing night it is used directly (mid-night resume); otherwise the simulation always begins at astronomical dusk of the target night, regardless of the time-of-day component of the request.
 
 ## Architecture
@@ -121,6 +121,7 @@ Returns the next batch to run right now.
 ```
 
 Response includes an `ImmediateBatch` object (typed Pydantic model: `ulid`, `instrument`, `disperser`, `exposure_time`, `num_exposures`, `allocated_units`, plus raw `BatchData` fields), `feasible_plan_count`, and echoed `environment`.
+Within a single immediate batch, unit assignments are exclusive: the same operational unit is never assigned to more than one plan in that batch.
 
 ### `POST /scheduler/immediate/inline`
 
