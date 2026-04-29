@@ -1,5 +1,6 @@
 const API_PATHS = {
   status: "/scheduler/status",
+  sites: "/scheduler/sites",
   immediate: "/scheduler/immediate",
   immediateInline: "/scheduler/immediate/inline",
   predict: "/scheduler/predict",
@@ -856,6 +857,19 @@ fetch("/scheduler/mock-plans/presets")
       opt.value = p;
       opt.textContent = p;
       if (i === 0) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  });
+
+fetch(API_PATHS.sites)
+  .then((r) => r.json())
+  .then((sites) => {
+    const sel = elements.siteName;
+    sites.forEach(({ key, label }) => {
+      const opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = `${key} - ${label}`;
+      if (key === "ns") opt.selected = true;
       sel.appendChild(opt);
     });
   });

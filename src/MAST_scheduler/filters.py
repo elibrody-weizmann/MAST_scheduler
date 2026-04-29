@@ -12,7 +12,7 @@ from common.models.constraints import WhenToRepeat
 from common.models.plans import Plan
 
 from .config import SchedulerConfig
-from .models import (
+from .trace import (
     TRACE_STAGE_AIRMASS,
     TRACE_STAGE_ASTRONOMICAL_NIGHT,
     TRACE_STAGE_MOON_PHASE,

@@ -58,7 +58,8 @@ src/MAST_scheduler/
 ├── filters.py     — PlanFilter fluent chain
 ├── builder.py     — BatchBuilder + setup overhead + condition score
 ├── scheduler.py   — Scheduler (immediate and predictive modes)
-├── models.py      — PredictedBatch and API request/response models
+├── models.py      — API/domain models: requests, responses, PredictedBatch, KNOWN_SITES (MAST_common candidates)
+├── trace.py       — Observability/trace models: TRACE_STAGE_* constants, all *Trace classes (stay in MAST_scheduler)
 └── api/
     ├── app.py     — FastAPI application with lifespan
     └── routes.py  — immediate/predict (path + inline), mock generator, status

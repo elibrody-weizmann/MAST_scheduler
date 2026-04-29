@@ -15,7 +15,8 @@ from ulid import ULID
 
 from .config import SchedulerConfig
 from .filters import _plan_skycoord, _to_datetime
-from .models import (
+from .models import SetupBreakdown, TeardownBreakdown
+from .trace import (
     BatchBuildTrace,
     DroppedPlanTrace,
     GroupingTrace,
@@ -23,8 +24,6 @@ from .models import (
     PriorityFactorTrace,
     PriorityGroupTrace,
     PriorityTrace,
-    SetupBreakdown,
-    TeardownBreakdown,
     TraceRationale,
 )
 

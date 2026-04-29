@@ -1,5 +1,15 @@
 # Decisions
 
+## [2026-04-29] Split models.py into API models and trace/observability models
+
+**Why:** `models.py` mixed two categories with different futures: API/domain types that are candidates for migration to `MAST_common`, and scheduler-internal trace types that record decision internals and must stay in `MAST_scheduler`. Keeping them together would make the future migration noisy and create confusion about what belongs where.
+
+**What:** Trace/observability types (`TRACE_STAGE_*` constants, `TraceRationale`, `PlanTraceSummary`, all `*Trace` classes) moved to `trace.py`. `models.py` retains API/domain types only (`PredictedBatch`, request/response models, `EnvironmentConditions`, mock plan models, `KNOWN_SITES`, `KNOWN_SITE_LABELS`). `models.py` imports from `trace.py` for the optional `trace` fields in response models; this cross-import will be resolved when models migrate to `MAST_common`. Also added `KNOWN_SITE_LABELS` and a `/scheduler/sites` endpoint so the UI site selector is no longer hardcoded in HTML.
+
+**Implications:** New scheduler-internal observability types go in `trace.py`. New API/domain types go in `models.py`. The HTML must never hardcode enumerated values — always backed by an API endpoint. See CLAUDE.md for the enforced pattern.
+
+---
+
 ## [2026-04-29] Single source of truth for UI-visible enumerations
 
 **Why:** Preset names, instrument lists, and other enumerated values were duplicated between `models.py` and the HTML `<select>` elements, causing drift risk whenever a new preset was added.

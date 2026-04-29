@@ -54,9 +54,20 @@ uv run ruff format src/ tests/
 - `src/MAST_scheduler/filters.py` — PlanFilter fluent chain
 - `src/MAST_scheduler/builder.py` — BatchBuilder
 - `src/MAST_scheduler/scheduler.py` — Scheduler class
-- `src/MAST_scheduler/models.py` — PredictedBatch and API models
+- `src/MAST_scheduler/models.py` — API/domain models (MAST_common candidates)
+- `src/MAST_scheduler/trace.py` — Scheduler observability/trace models (stay in MAST_scheduler)
 - `src/MAST_scheduler/api/` — FastAPI app and routes
 - `tests/fixtures/` — TOML plan files for testing (must be named PLAN_<ULID>.toml)
+
+## Model organisation
+
+Models are split into two files with distinct futures:
+
+**`models.py` — API/domain models.** Request/response types, `PredictedBatch`, `EnvironmentConditions`, mock plan models, `KNOWN_SITES`, `KNOWN_SITE_LABELS`, and related constants. These are candidates for eventual migration to `MAST_common`. Do not add scheduler-internal types here.
+
+**`trace.py` — Observability/trace models.** All `TRACE_STAGE_*` constants and `*Trace` classes that record scheduler decision internals. These stay in `MAST_scheduler` and must never be moved to `MAST_common`. Do not add API-facing models here.
+
+`models.py` may import from `trace.py` for the `trace` fields in response models (`ImmediateResponse`, `PredictResponse`). When `models.py` is eventually migrated to `MAST_common`, those trace fields will be decoupled at that point.
 
 ## Model discipline
 
@@ -69,10 +80,12 @@ Enumerated values that appear in the UI (preset names, instrument lists, site na
 
 Pattern to follow:
 1. Define the canonical constant (tuple, enum, or list) in `models.py`.
-2. Add a `GET` endpoint in `routes.py` that returns it (e.g. `/scheduler/mock-plans/presets`).
+2. Add a `GET` endpoint in `routes.py` that returns it (e.g. `/scheduler/sites`, `/scheduler/mock-plans/presets`).
 3. In `app.js`, fetch that endpoint on page load and build the `<select>` / UI element dynamically.
 
 This keeps `models.py` as the single place to add, rename, or remove options, and the UI stays in sync automatically. Do not add a parallel list of strings to `index.html` or `app.js`.
+
+When updating models, always consider whether `index.html` needs to change. Do not duplicate data, but adjust the UI to expose new fields, rename labels to match, or add controls for new options. Model changes and UI changes belong in the same commit.
 
 ## Design reference
 

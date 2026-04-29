@@ -51,50 +51,50 @@ class TestComputeSetupOverhead:
         prev = _batch("deepspec")
         nxt = _batch("deepspec")
         overhead, _ = _compute_setup_overhead(prev, nxt, config)
-        assert overhead ==0.0
+        assert overhead == 0.0
 
     def test_no_overhead_same_highspec_disperser(self, config):
         prev = _batch("highspec", disperser="Ca")
         nxt = _batch("highspec", disperser="Ca")
         overhead, _ = _compute_setup_overhead(prev, nxt, config)
-        assert overhead ==0.0
+        assert overhead == 0.0
 
     def test_spectrograph_switch_deepspec_to_highspec(self, config):
         prev = _batch("deepspec")
         nxt = _batch("highspec", disperser="Ca")
         overhead, _ = _compute_setup_overhead(prev, nxt, config)
-        assert overhead ==config.spectrograph_switch_time
+        assert overhead == config.spectrograph_switch_time
 
     def test_spectrograph_switch_highspec_to_deepspec(self, config):
         prev = _batch("highspec", disperser="Ca")
         nxt = _batch("deepspec")
         overhead, _ = _compute_setup_overhead(prev, nxt, config)
-        assert overhead ==config.spectrograph_switch_time
+        assert overhead == config.spectrograph_switch_time
 
     def test_grating_stage_move_different_disperser(self, config):
         prev = _batch("highspec", disperser="Ca")
         nxt = _batch("highspec", disperser="Mg")
         overhead, _ = _compute_setup_overhead(prev, nxt, config)
-        assert overhead ==config.grating_stage_move_time
+        assert overhead == config.grating_stage_move_time
 
     def test_lamp_warmup(self, config):
         prev = _batch("deepspec", lamp_on=False)
         nxt = _batch("deepspec", lamp_on=True)
         overhead, _ = _compute_setup_overhead(prev, nxt, config)
-        assert overhead ==config.lamp_warmup_time
+        assert overhead == config.lamp_warmup_time
 
     def test_lamp_cooldown(self, config):
         prev = _batch("deepspec", lamp_on=True)
         nxt = _batch("deepspec", lamp_on=False)
         overhead, _ = _compute_setup_overhead(prev, nxt, config)
-        assert overhead ==config.lamp_cooldown_time
+        assert overhead == config.lamp_cooldown_time
 
     def test_combined_switch_and_lamp_warmup(self, config):
         prev = _batch("deepspec", lamp_on=False)
         nxt = _batch("highspec", disperser="Ca", lamp_on=True)
         expected = config.spectrograph_switch_time + config.lamp_warmup_time
         overhead, _ = _compute_setup_overhead(prev, nxt, config)
-        assert overhead ==expected
+        assert overhead == expected
 
     def test_no_lamp_change_when_both_on(self, config):
         prev = _batch("deepspec", lamp_on=True)

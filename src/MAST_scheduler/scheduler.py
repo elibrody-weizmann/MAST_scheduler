@@ -13,14 +13,12 @@ from common.models.plans import Plan
 from .builder import BatchBuilder, _compute_setup_overhead, _compute_teardown
 from .config import SchedulerConfig
 from .filters import PlanFilter
-from .models import (
+from .models import PredictedBatch, SetupBreakdown, TeardownBreakdown
+from .trace import (
     ImmediateScheduleTrace,
     PlanTraceSummary,
-    PredictedBatch,
     PredictedIterationTrace,
     PredictedScheduleTrace,
-    SetupBreakdown,
-    TeardownBreakdown,
 )
 
 if TYPE_CHECKING:

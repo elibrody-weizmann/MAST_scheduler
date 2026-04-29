@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ..mock_plans import generate_mock_plans
 from ..models import (
+    KNOWN_SITE_LABELS,
     KNOWN_SITES,
     MOCK_PRESETS,
     ImmediateRequest,
@@ -229,6 +230,11 @@ def predict_inline(req: InlinePredictRequest, request: Request) -> PredictRespon
         environment=req.environment,
         trace=trace,
     )
+
+
+@router.get("/sites")
+def get_sites() -> list[dict]:
+    return [{"key": k, "label": KNOWN_SITE_LABELS[k]} for k in KNOWN_SITES]
 
 
 @router.get("/mock-plans/presets")
