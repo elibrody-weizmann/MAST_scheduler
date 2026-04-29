@@ -534,6 +534,42 @@ class TestAPI:
         data = response.json()
         assert "predicted_batches" in data
 
+    def test_predict_inline_generated_highspec_preserves_dispersers(self):
+        with TestClient(app) as client:
+            generated = client.post(
+                "/scheduler/mock-plans/generate",
+                json={
+                    "count": 60,
+                    "seed": 42,
+                    "preset": "highspec-heavy",
+                    "instruments": ["highspec"],
+                },
+            )
+            assert generated.status_code == 200
+            plans = generated.json()["plans"]
+
+            response = client.post(
+                "/scheduler/predict/inline",
+                json={
+                    "plans": plans,
+                    "start_datetime": "2026-04-27T19:00:00Z",
+                    "site_name": "ns",
+                    "operational_units": ["mast01", "mast02", "mast03"],
+                },
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        batches = data["predicted_batches"]
+        assert batches, "Expected at least one predicted batch."
+        batch_dispersers = {batch["disperser"] for batch in batches}
+        plan_dispersers = {
+            plan["spec_assignment"]["settings"]["disperser"]
+            for plan in plans
+            if plan.get("spec_assignment", {}).get("instrument") == "highspec"
+        }
+        assert batch_dispersers.issubset(plan_dispersers)
+
     def test_predict_inline_environment_is_echoed(self):
         minimal_plan = load_plan("minimal").model_dump(mode="json")
         environment = {

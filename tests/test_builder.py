@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from astroplan import Observer
 from common.models.batches import BatchData
+from common.models.highspec import HighspecSettings
 
 from MAST_scheduler.builder import BatchBuilder, _condition_score
 from MAST_scheduler.config import SchedulerConfig
@@ -103,6 +104,16 @@ class TestCalibration:
         batch = build([load_plan("minimal"), load_plan("airmass")])
         assert batch is not None
         assert not batch.spec_assignment.calibration.lamp_on
+
+    def test_highspec_batch_preserves_selected_plan_disperser(self):
+        highspec = load_plan("highspec")
+        highspec.spec_assignment.settings = HighspecSettings(disperser="Mg")
+
+        batch = build([highspec])
+
+        assert batch is not None
+        assert isinstance(batch.spec_assignment.settings, HighspecSettings)
+        assert str(batch.spec_assignment.settings.disperser) == "Mg"
 
 
 class TestUnitAllocation:

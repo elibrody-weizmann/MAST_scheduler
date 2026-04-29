@@ -124,6 +124,9 @@ def _compute_setup_overhead(
     elif prev_lamp and not next_lamp:
         overhead += config.lamp_cooldown_time
 
+    if any(getattr(p, "autofocus", False) for p in next_batch.plans):
+        overhead += config.autofocus_time
+
     return overhead
 
 
@@ -485,8 +488,8 @@ def _make_scheduled_batch(
         nd_densities = [int(f.replace("ND", "")) for f in nd_filters if f.startswith("ND")]
         cal_filter = f"ND{max(nd_densities)}" if nd_densities else None
 
-    calibration = CalibrationSettings.model_construct(lamp_on=lamp_on, filter=cal_filter)
-    spec_assignment = SpectrographModel.model_construct(
+    calibration = CalibrationSettings(lamp_on=lamp_on, filter=cal_filter)
+    spec_assignment = SpectrographModel(
         instrument=plans[0].spec_assignment.instrument,  # type: ignore[union-attr]
         calibration=calibration,
         settings=plans[0].spec_assignment.settings if plans[0].spec_assignment else None,

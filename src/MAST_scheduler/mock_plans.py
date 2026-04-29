@@ -8,6 +8,7 @@ from .models import (
     MOCK_PRESET_BALANCED,
     MOCK_PRESET_CONSTRAINTS_HEAVY,
     MOCK_PRESET_HIGHSPEC_HEAVY,
+    MOCK_PRESET_LONG_EXPOSURE,
     MOCK_PRESET_QUORUM_STRESS,
     MOCK_PRESET_REPEAT_STRESS,
     MOCK_PRESETS,
@@ -22,7 +23,7 @@ ULID_LENGTH = 26
 DEFAULT_OWNER = "mock-generator"
 TIME_WINDOW_HOURS = 4
 MAX_ALLOCATED_UNITS = 3
-HIGHSPEC_DISPERSERS = ("Ca", "Ha", "Fe")
+HIGHSPEC_DISPERSERS = ("Ca", "Mg", "Halpha")
 CALIBRATION_FILTERS = ("ND1000", "ND2000", "ND4000")
 REPEAT_MODES = (
     "Once",
@@ -56,6 +57,13 @@ _PRESET_OVERRIDES = {
         "highspec_probability": 0.4,
         "constraints_probability": 0.5,
         "too_probability": 0.2,
+    },
+    MOCK_PRESET_LONG_EXPOSURE: {
+        "highspec_probability": 0.5,
+        "constraints_probability": 0.5,
+        "too_probability": 0.05,
+        "exposure_range_seconds": (900.0, 5400.0),
+        "num_exposures_range": (3, 10),
     },
 }
 
@@ -111,6 +119,14 @@ def _validate_generate_request(req: MockPlanGenerateRequest) -> None:
         raise ValueError("`exposure_range_seconds` must be positive and sorted.")
     if not 0 <= req.too_fraction <= 1:
         raise ValueError("`too_fraction` must be between 0 and 1.")
+    if not 0 <= req.autofocus_fraction <= 1:
+        raise ValueError("`autofocus_fraction` must be between 0 and 1.")
+    min_exp_count, max_exp_count = req.num_exposures_range
+    if min_exp_count <= 0 or min_exp_count > max_exp_count:
+        raise ValueError("`num_exposures_range` must be positive and sorted.")
+    min_ttg, max_ttg = req.timeout_to_guiding_range
+    if min_ttg <= 0 or min_ttg > max_ttg or max_ttg > 600:
+        raise ValueError("`timeout_to_guiding_range` must be positive, sorted, and <= 600.")
 
 
 def _build_plan(
@@ -122,18 +138,26 @@ def _build_plan(
     preset: dict[str, float],
 ) -> dict:
     instrument = _pick_instrument(req, rng, preset)
-    requested_exposure = rng.uniform(*req.exposure_range_seconds)
+    exposure_range = preset.get("exposure_range_seconds", req.exposure_range_seconds)
+    num_exposures_range = preset.get("num_exposures_range", req.num_exposures_range)
+    requested_exposure = rng.uniform(*exposure_range)
     max_exposure_multiplier = 1.0 + rng.uniform(0.0, 2.0)
-    max_exposure = min(req.exposure_range_seconds[1], requested_exposure * max_exposure_multiplier)
+    max_exposure = min(exposure_range[1], requested_exposure * max_exposure_multiplier)
     repeats = _pick_repeat(req, rng)
     too_probability = max(req.too_fraction, preset["too_probability"])
     is_too = rng.random() < too_probability
+    autofocus = rng.random() < req.autofocus_fraction
+    num_exposures = rng.randint(*num_exposures_range)
+    timeout_to_guiding = round(rng.uniform(*req.timeout_to_guiding_range), 1)
     plan = {
         "ulid": _random_ulid(rng),
         "owner": DEFAULT_OWNER,
         "merit": rng.randint(*req.merit_range),
         "approved": True,
+        "mockup": True,
         "too": is_too,
+        "autofocus": autofocus,
+        "timeout_to_guiding": timeout_to_guiding,
         "quorum": _pick_quorum(req, rng),
         "allocated_units": _pick_allocated_units(req, rng),
         "target": {
@@ -142,6 +166,7 @@ def _build_plan(
             "dec_degrees": _format_dec_degrees(rng.uniform(-30, 80)),
             "requested_exposure_duration": round(requested_exposure, 2),
             "max_exposure_duration": round(max_exposure, 2),
+            "requested_number_of_exposures": num_exposures,
             "repeats": {
                 "every": repeats,
                 "nights": rng.randint(1, 3),
@@ -219,6 +244,8 @@ def _build_constraints(
             "max_phase": round(rng.uniform(15, 80), 2),
             "min_distance": round(rng.uniform(15, 90), 2),
         }
+    if req.include_seeing_constraints:
+        constraints["seeing"] = {"max": round(rng.uniform(1.0, 4.0), 1)}
     if req.include_time_windows and not is_too:
         start_offset = rng.randint(0, 6)
         start = base_time + timedelta(hours=start_offset)

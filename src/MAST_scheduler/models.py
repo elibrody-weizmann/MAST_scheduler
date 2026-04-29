@@ -127,6 +127,7 @@ class PredictedBatch(BaseModel):
     predicted_start: datetime
     predicted_end: datetime
     predicted_duration_seconds: float
+    setup_overhead_seconds: float = 0.0
     plan_ids: list[str]
     instrument: str
     disperser: str | None
@@ -205,12 +206,14 @@ MOCK_PRESET_CONSTRAINTS_HEAVY = "constraints-heavy"
 MOCK_PRESET_HIGHSPEC_HEAVY = "highspec-heavy"
 MOCK_PRESET_QUORUM_STRESS = "quorum-stress"
 MOCK_PRESET_REPEAT_STRESS = "repeat-stress"
+MOCK_PRESET_LONG_EXPOSURE = "long-exposure"
 MOCK_PRESETS = (
     MOCK_PRESET_BALANCED,
     MOCK_PRESET_CONSTRAINTS_HEAVY,
     MOCK_PRESET_HIGHSPEC_HEAVY,
     MOCK_PRESET_QUORUM_STRESS,
     MOCK_PRESET_REPEAT_STRESS,
+    MOCK_PRESET_LONG_EXPOSURE,
 )
 
 
@@ -229,12 +232,16 @@ class MockPlanGenerateRequest(BaseModel):
     )
     merit_range: tuple[int, int] = (1, 10)
     quorum_range: tuple[int, int] = (1, 3)
-    exposure_range_seconds: tuple[float, float] = (600.0, 3600.0)
+    exposure_range_seconds: tuple[float, float] = (60.0, 600.0)
     too_fraction: float = 0.1
+    autofocus_fraction: float = 0.3
+    num_exposures_range: tuple[int, int] = (1, 5)
+    timeout_to_guiding_range: tuple[float, float] = (60.0, 600.0)
     allocated_units_pool: list[str] = Field(default_factory=lambda: ["mast01", "mast02", "mast03"])
     include_time_windows: bool = True
     include_moon_constraints: bool = True
     include_airmass_constraints: bool = True
+    include_seeing_constraints: bool = True
     include_calibration: bool = False
 
 

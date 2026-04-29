@@ -149,7 +149,7 @@ class Scheduler:
             duration = batch.predicted_duration or 0.0
             batch_end = _advance(current_time, duration)
 
-            pb = _to_predicted_batch(batch, current_time, batch_end, duration)
+            pb = _to_predicted_batch(batch, current_time, batch_end, duration, setup_overhead)
             results.append(pb)
 
             for pid in pb.plan_ids:
@@ -272,6 +272,7 @@ def _to_predicted_batch(
     start: datetime,
     end: datetime,
     duration: float,
+    setup_overhead: float = 0.0,
 ) -> PredictedBatch:
     from common.models.highspec import HighspecSettings
 
@@ -294,6 +295,7 @@ def _to_predicted_batch(
         predicted_start=start,
         predicted_end=end,
         predicted_duration_seconds=duration,
+        setup_overhead_seconds=setup_overhead,
         plan_ids=[p.ulid or "" for p in batch.plans],
         instrument=instrument,
         disperser=disperser,

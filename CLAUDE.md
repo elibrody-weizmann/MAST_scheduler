@@ -63,6 +63,17 @@ uv run ruff format src/ tests/
 - **Do not modify MAST_common** from within this repo unless there is no alternative. Changes to shared types belong in MAST_common's own development cycle and may break MAST_control.
 - **Do not mirror or duplicate types from MAST_common.** If a model type you need exists in `common.models.*`, import and use it directly. Creating a local copy (even with a note like "mirrors Batch") is not acceptable — it splits the source of truth and causes silent divergence. If a common type is incompatible (e.g. Pydantic v2 conflict), fix it in MAST_common or raise the issue rather than duplicating here.
 
+## Single source of truth for UI-visible data
+
+Enumerated values that appear in the UI (preset names, instrument lists, site names, repeat modes, etc.) must be defined **once** in `models.py` and exposed to the frontend via an API endpoint. The HTML must never hardcode these values.
+
+Pattern to follow:
+1. Define the canonical constant (tuple, enum, or list) in `models.py`.
+2. Add a `GET` endpoint in `routes.py` that returns it (e.g. `/scheduler/mock-plans/presets`).
+3. In `app.js`, fetch that endpoint on page load and build the `<select>` / UI element dynamically.
+
+This keeps `models.py` as the single place to add, rename, or remove options, and the UI stays in sync automatically. Do not add a parallel list of strings to `index.html` or `app.js`.
+
 ## Design reference
 
 - `../MAST/MAST_control/docs/scheduler-design.md`

@@ -353,10 +353,14 @@ function renderPrediction(data) {
     title.textContent = `${batch.instrument}${batch.disperser ? ` / ${batch.disperser}` : ""}`;
     const meta = document.createElement("div");
     meta.className = "batch-meta";
+    const overheadRow = batch.setup_overhead_seconds > 0
+      ? [`Setup overhead: ${formatMinutesSeconds(batch.setup_overhead_seconds)}`]
+      : [];
     for (const value of [
       `${formatDateTime(batch.predicted_start)} - ${formatDateTime(batch.predicted_end)}`,
       formatDuration(batch.predicted_duration_seconds),
       `${batch.num_exposures} x ${batch.exposure_time}s`,
+      ...overheadRow,
       `Units: ${(batch.allocated_units ?? []).join(", ") || "-"}`,
       `Plans: ${(batch.plan_ids ?? []).join(", ") || "-"}`,
     ]) {
@@ -842,3 +846,16 @@ setDefaultPredictionStart();
 elements.completedTonight.value = EMPTY_JSON;
 resetTrace();
 refreshStatus();
+
+fetch("/scheduler/mock-plans/presets")
+  .then((r) => r.json())
+  .then((presets) => {
+    const sel = elements.mockPreset;
+    presets.forEach((p, i) => {
+      const opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      if (i === 0) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  });

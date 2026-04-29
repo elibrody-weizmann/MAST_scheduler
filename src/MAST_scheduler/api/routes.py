@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from ..mock_plans import generate_mock_plans
 from ..models import (
     KNOWN_SITES,
+    MOCK_PRESETS,
     ImmediateRequest,
     ImmediateResponse,
     InlineImmediateRequest,
@@ -228,6 +229,11 @@ def predict_inline(req: InlinePredictRequest, request: Request) -> PredictRespon
         environment=req.environment,
         trace=trace,
     )
+
+
+@router.get("/mock-plans/presets")
+def mock_plan_presets() -> list[str]:
+    return list(MOCK_PRESETS)
 
 
 @router.post("/mock-plans/generate", response_model=MockPlanGenerateResponse)
