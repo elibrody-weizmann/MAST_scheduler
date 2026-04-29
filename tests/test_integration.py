@@ -398,6 +398,48 @@ class TestPredictedSetupOverhead:
         # Both are deepspec "once per night" → they go in one batch, loop ends
         assert len(result) == 1
 
+    def test_first_batch_includes_full_setup_overhead(self):
+        """Predictions never trust prior state, so the first batch pays full
+        cold-start setup: spectrograph switch + grating move (highspec) +
+        lamp warmup (lamp on) + acquire-and-guide. Autofocus is zero in this
+        fixture."""
+        config = SchedulerConfig()
+        scheduler = Scheduler(config=config)
+        night_start = datetime(2026, 4, 27, 19, 0, tzinfo=UTC)
+        night_end = datetime(2026, 4, 28, 6, 0, tzinfo=UTC)
+
+        highspec_plan = load_plan("highspec")  # highspec, disperser=Ca, lamp_on=True
+
+        obs = self._make_obs_mock(night_start, night_end)
+
+        with patch("MAST_scheduler.filters._plan_skycoord") as mock_coord:
+            target = MagicMock()
+            target.transform_to.return_value = MagicMock(alt=MagicMock(deg=60.0))
+            target.separation.return_value = MagicMock(deg=90.0)
+            mock_coord.return_value = target
+            with (
+                patch("MAST_scheduler.builder._plan_skycoord", return_value=target),
+                patch("MAST_scheduler.builder.Observer", return_value=obs),
+                patch("MAST_scheduler.filters.Observer", return_value=obs),
+                patch("MAST_scheduler.scheduler.Observer", return_value=obs),
+            ):
+                result = scheduler.make_predicted_batches(
+                    [highspec_plan],
+                    site=WIS_LOCATION,
+                    start_datetime=night_start,
+                    operational_units=["mast01", "mast02"],
+                )
+
+        assert len(result) == 1
+        expected_setup = (
+            config.spectrograph_switch_time
+            + config.grating_stage_move_time
+            + config.lamp_warmup_time
+            + config.acquire_and_guide_seconds
+        )
+        assert result[0].setup_overhead_seconds == expected_setup
+        assert result[0].predicted_start - night_start == timedelta(seconds=expected_setup)
+
 
 class TestAPI:
     def test_ui_index(self):

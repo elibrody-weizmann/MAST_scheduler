@@ -1,5 +1,15 @@
 # Decisions
 
+## [2026-04-29] Predicted batches always pay full cold-start setup overhead
+
+**Why:** Predictions cannot trust the live system state, and chaining setup costs from one simulated batch to the next was effectively asserting that the prior simulated batch's instrument/disperser/lamp configuration was already in place at the start of the next one. That made the first batch of a night cheaper than every other batch and made same-instrument follow-ups artificially fast. The user-facing rule is now: every batch in a prediction is treated as starting from an unknown system state.
+
+**What:** `_compute_initial_setup_overhead` was deleted and `_compute_setup_overhead` in `builder.py` now takes only `(next_batch, config)`. It charges `spectrograph_switch_seconds` unconditionally, `grating_move_seconds` whenever the next batch is `highspec`, `lamp_warmup_seconds` whenever the next batch has `lamp_on=True`, `autofocus_seconds` whenever any plan in the next batch has `autofocus=True`, and `acquire_and_guide_seconds` unconditionally. `lamp_cooldown_seconds` is no longer reachable (cooldown is post-use, not setup). The predict loop in `scheduler.py` no longer tracks `previous_batch`; every iteration calls the unified function.
+
+**Implications:** Predicted nights are longer because batch 1 now pays spectrograph switch + grating move (highspec) + lamp warmup, and batch N+1 pays full setup even when it shares instrument/disperser/lamp with batch N. Immediate mode is unchanged (it has never computed setup overhead). Teardown was already always applied, so no change there. `lamp_cooldown_seconds` remains a `SetupBreakdown` field for serialization compatibility but stays at `0.0`.
+
+---
+
 ## [2026-04-29] Constraint completeness registry and UI surface
 
 **Why:** Filter constraint tests were scattered across `test_filters.py` without systematic

@@ -12,7 +12,6 @@ from common.models.plans import Plan
 
 from .builder import (
     BatchBuilder,
-    _compute_initial_setup_overhead,
     _compute_setup_overhead,
     _compute_teardown,
 )
@@ -121,7 +120,6 @@ class Scheduler:
         )
         completed_tonight: dict[str, int] = {}
         results: list[PredictedBatch] = []
-        previous_batch: BatchData | None = None
         remaining = list(pending_plans)
         trace = PredictedScheduleTrace(night_start=night_start, night_end=night_end)
         iteration = 0
@@ -152,15 +150,7 @@ class Scheduler:
                 )
                 break
 
-            if previous_batch is None:
-                setup_overhead, setup_breakdown = _compute_initial_setup_overhead(
-                    batch, self.config
-                )
-            else:
-                setup_overhead, setup_breakdown = _compute_setup_overhead(
-                    previous_batch, batch, self.config
-                )
-
+            setup_overhead, setup_breakdown = _compute_setup_overhead(batch, self.config)
             current_time = _advance(current_time, setup_overhead)
             if current_time >= night_end:
                 break
@@ -206,7 +196,6 @@ class Scheduler:
                 )
             )
 
-            previous_batch = batch
             current_time = batch_end
 
         return results, trace

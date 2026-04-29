@@ -83,80 +83,23 @@ def _group_lamp_on(group: list[Plan]) -> bool:
 
 
 def _compute_setup_overhead(
-    previous: BatchData,
     next_batch: BatchData,
     config: SchedulerConfig,
 ) -> tuple[float, SetupBreakdown]:
     """Return per-batch setup cost in seconds with a per-component breakdown.
 
-    This includes both:
-    - inter-batch transitions (spectrograph/lamp/grating changes), and
-    - per-batch startup work before exposures (autofocus, acquire+guide).
+    Predictions never trust prior instrument/lamp/disperser state, so every batch
+    pays full setup as if starting from a cold system. ``lamp_cooldown_seconds``
+    is therefore unreachable here (cooldown is post-use, not setup).
     """
     breakdown = SetupBreakdown()
+    breakdown.spectrograph_switch_seconds = config.spectrograph_switch_time
 
-    prev_instrument = str(previous.spec_assignment.instrument) if previous.spec_assignment else ""
     next_instrument = (
         str(next_batch.spec_assignment.instrument) if next_batch.spec_assignment else ""
     )
-
-    if prev_instrument != next_instrument:
-        breakdown.spectrograph_switch_seconds = config.spectrograph_switch_time
-
     if next_instrument == "highspec":
-        ns = next_batch.spec_assignment.settings if next_batch.spec_assignment else None
-        next_disperser = str(ns.disperser) if isinstance(ns, HighspecSettings) else None
-        ps = previous.spec_assignment.settings if previous.spec_assignment else None
-        prev_disperser: str | None = str(ps.disperser) if isinstance(ps, HighspecSettings) else None
-        if (
-            prev_disperser is not None
-            and next_disperser is not None
-            and prev_disperser != next_disperser
-        ):
-            breakdown.grating_move_seconds = config.grating_stage_move_time
-
-    prev_lamp = (
-        bool(previous.spec_assignment.calibration.lamp_on)
-        if previous.spec_assignment and previous.spec_assignment.calibration
-        else False
-    )
-    next_lamp = (
-        bool(next_batch.spec_assignment.calibration.lamp_on)
-        if next_batch.spec_assignment and next_batch.spec_assignment.calibration
-        else False
-    )
-    if not prev_lamp and next_lamp:
-        breakdown.lamp_warmup_seconds = config.lamp_warmup_time
-    elif prev_lamp and not next_lamp:
-        breakdown.lamp_cooldown_seconds = config.lamp_cooldown_time
-
-    if any(getattr(p, "autofocus", False) for p in next_batch.plans):
-        breakdown.autofocus_seconds = config.autofocus_time
-
-    breakdown.acquire_and_guide_seconds = config.acquire_and_guide_seconds
-
-    breakdown.total_seconds = (
-        breakdown.spectrograph_switch_seconds
-        + breakdown.grating_move_seconds
-        + breakdown.lamp_warmup_seconds
-        + breakdown.lamp_cooldown_seconds
-        + breakdown.autofocus_seconds
-        + breakdown.acquire_and_guide_seconds
-    )
-    return breakdown.total_seconds, breakdown
-
-
-def _compute_initial_setup_overhead(
-    next_batch: BatchData,
-    config: SchedulerConfig,
-) -> tuple[float, SetupBreakdown]:
-    """Return initial setup cost in seconds for the first batch of a night.
-
-    Since we don't know the prior system state, this captures per-batch startup
-    work that must happen before exposures, plus one-way setup actions that are
-    safe to assume when requested (e.g. lamp warmup if lamp is requested on).
-    """
-    breakdown = SetupBreakdown()
+        breakdown.grating_move_seconds = config.grating_stage_move_time
 
     if (
         next_batch.spec_assignment
@@ -169,8 +112,11 @@ def _compute_initial_setup_overhead(
         breakdown.autofocus_seconds = config.autofocus_time
 
     breakdown.acquire_and_guide_seconds = config.acquire_and_guide_seconds
+
     breakdown.total_seconds = (
-        breakdown.lamp_warmup_seconds
+        breakdown.spectrograph_switch_seconds
+        + breakdown.grating_move_seconds
+        + breakdown.lamp_warmup_seconds
         + breakdown.autofocus_seconds
         + breakdown.acquire_and_guide_seconds
     )
