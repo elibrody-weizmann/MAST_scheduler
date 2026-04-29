@@ -570,6 +570,51 @@ class TestAPI:
         }
         assert batch_dispersers.issubset(plan_dispersers)
 
+    def test_predict_inline_marks_batches_with_too_plans(self):
+        with TestClient(app) as client:
+            generated = client.post(
+                "/scheduler/mock-plans/generate",
+                json={
+                    "count": 25,
+                    "seed": 123,
+                    "preset": "balanced",
+                    "too_fraction": 0.8,
+                    "include_constraints": False,
+                    "instruments": ["highspec", "deepspec"],
+                },
+            )
+            assert generated.status_code == 200
+            plans = generated.json()["plans"]
+
+            id_to_too = {p["ulid"]: bool(p.get("too")) for p in plans}
+            assert any(id_to_too.values()), "Expected generator to create some ToO plans"
+
+            response = client.post(
+                "/scheduler/predict/inline",
+                json={
+                    "plans": plans,
+                    "start_datetime": "2026-04-27T19:00:00Z",
+                    "site_name": "ns",
+                    "operational_units": ["mast01", "mast02", "mast03"],
+                },
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        batches = data["predicted_batches"]
+        assert batches, "Expected at least one predicted batch."
+
+        any_contains_too = False
+        for batch in batches:
+            plan_ids = batch.get("plan_ids") or []
+            expected_too_count = sum(1 for pid in plan_ids if id_to_too.get(pid))
+            assert batch["too_count"] == expected_too_count
+            assert batch["contains_too"] is (expected_too_count > 0)
+            if batch["contains_too"]:
+                any_contains_too = True
+
+        assert any_contains_too, "Expected at least one predicted batch to contain ToO plans"
+
     def test_predict_inline_environment_is_echoed(self):
         minimal_plan = load_plan("minimal").model_dump(mode="json")
         environment = {

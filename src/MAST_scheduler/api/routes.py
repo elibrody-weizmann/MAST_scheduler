@@ -88,6 +88,9 @@ def _serialize_batch(batch) -> dict:
     for plan in batch.plans:
         allocated.extend(u for u in plan.allocated_units if u not in allocated)
 
+    too_count = sum(1 for plan in batch.plans if bool(plan.too))
+    contains_too = too_count > 0
+
     raw = batch.model_dump(mode="json", exclude={"plans"})
     raw.update(
         instrument=instrument,
@@ -95,6 +98,8 @@ def _serialize_batch(batch) -> dict:
         exposure_time=batch.exposure_duration,
         num_exposures=batch.number_of_exposures,
         allocated_units=allocated,
+        too_count=too_count,
+        contains_too=contains_too,
     )
     return raw
 

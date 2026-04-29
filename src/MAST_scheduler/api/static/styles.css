@@ -303,6 +303,11 @@ textarea {
   color: var(--danger);
 }
 
+.pill.too {
+  border-color: rgb(56 189 248 / 0.65);
+  color: var(--accent);
+}
+
 .empty-state {
   border: 1px dashed var(--border);
   border-radius: 0.75rem;
@@ -339,6 +344,12 @@ textarea {
   border-radius: 0.85rem;
   background: rgb(31 41 55 / 0.72);
   padding: 1rem;
+}
+
+.prediction-batch.prediction-batch-too {
+  border-color: rgb(56 189 248 / 0.8);
+  background: rgb(56 189 248 / 0.12);
+  box-shadow: 0 0 0 1px rgb(56 189 248 / 0.25) inset;
 }
 
 .prediction-batch h3 {
@@ -410,6 +421,12 @@ textarea {
   display: grid;
   gap: 0.65rem;
   padding: 0.75rem;
+}
+
+.trace-iteration.trace-iteration-too {
+  border-color: rgb(56 189 248 / 0.8);
+  background: rgb(56 189 248 / 0.12);
+  box-shadow: 0 0 0 1px rgb(56 189 248 / 0.25) inset;
 }
 
 .trace-iteration h3 {

@@ -19,6 +19,8 @@ class PredictedBatch(BaseModel):
     teardown_overhead_seconds: float = 0.0
     teardown_breakdown: TeardownBreakdown = TeardownBreakdown()
     plan_ids: list[str]
+    too_count: int = 0
+    contains_too: bool = False
     instrument: str
     disperser: str | None
     exposure_time: float
@@ -60,6 +62,8 @@ class ImmediateBatch(BaseModel):
     exposure_time: float
     num_exposures: int
     allocated_units: list[str]
+    too_count: int = 0
+    contains_too: bool = False
 
 
 class ImmediateResponse(BaseModel):

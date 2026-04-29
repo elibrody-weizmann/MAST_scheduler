@@ -313,6 +313,9 @@ def _to_predicted_batch(
         if isinstance(settings, HighspecSettings):
             disperser = str(settings.disperser)
 
+    too_count = sum(1 for plan in batch.plans if bool(plan.too))
+    contains_too = too_count > 0
+
     allocated: list[str] = []
     for plan in batch.plans:
         allocated.extend(u for u in plan.allocated_units if u not in allocated)
@@ -327,6 +330,8 @@ def _to_predicted_batch(
         teardown_overhead_seconds=teardown_overhead,
         teardown_breakdown=teardown_breakdown or TeardownBreakdown(),
         plan_ids=[p.ulid or "" for p in batch.plans],
+        too_count=too_count,
+        contains_too=contains_too,
         instrument=instrument,
         disperser=disperser,
         exposure_time=batch.exposure_duration,

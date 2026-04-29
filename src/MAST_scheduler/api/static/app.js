@@ -326,9 +326,16 @@ function renderImmediate(data) {
   }
 
   const batch = data.batch;
-  setState(elements.immediateState, data.simulated ? "Simulated" : "Ready", data.simulated ? "" : "success");
+  const tooCount = batch.too_count ?? 0;
+  const containsToo = batch.contains_too ?? tooCount > 0;
+  const pillStatus = data.simulated ? "" : containsToo ? "too" : "success";
+  setState(
+    elements.immediateState,
+    data.simulated ? "Simulated" : containsToo ? "ToO batch" : "Ready",
+    pillStatus,
+  );
   elements.immediateSummary.className = "";
-  renderSummary(elements.immediateSummary, [
+  const summaryRows = [
     ["Feasible plans", data.feasible_plan_count],
     ["Batch", batch.ulid ?? "Created"],
     ["Instrument", batch.instrument],
@@ -336,7 +343,11 @@ function renderImmediate(data) {
     ["Exposure time", batch.exposure_time],
     ["Exposures", batch.num_exposures],
     ["Allocated units", (batch.allocated_units ?? []).join(", ")],
-  ]);
+  ];
+  if (containsToo) {
+    summaryRows.push(["ToO plans", tooCount]);
+  }
+  renderSummary(elements.immediateSummary, summaryRows);
   renderTrace(data.trace, "Immediate");
 }
 
@@ -355,7 +366,9 @@ function renderPrediction(data) {
 
   for (const batch of batches.slice(0, PREDICTION_BATCH_LIMIT)) {
     const item = document.createElement("article");
-    item.className = "prediction-batch";
+    const tooCount = batch.too_count ?? 0;
+    const containsToo = batch.contains_too ?? tooCount > 0;
+    item.className = `prediction-batch${containsToo ? " prediction-batch-too" : ""}`;
     const title = document.createElement("h3");
     title.textContent = `${batch.instrument}${batch.disperser ? ` / ${batch.disperser}` : ""}`;
     const meta = document.createElement("div");
@@ -386,6 +399,7 @@ function renderPrediction(data) {
       `${batch.num_exposures} x ${batch.exposure_time}s`,
       batch.lamp_on != null ? `Lamp: ${batch.lamp_on ? "on" : "off"}` : null,
       batch.calibration_filter ? `Cal filter: ${batch.calibration_filter}` : null,
+      containsToo ? `ToO plans: ${tooCount}` : null,
       ...overheadRows,
       ...teardownRows,
       `Units: ${(batch.allocated_units ?? []).join(", ") || "-"}`,
@@ -671,8 +685,25 @@ function renderPredictedTrace(trace) {
     return wrapper;
   }
   for (const iteration of trace.iterations ?? []) {
+    const immediateTrace = iteration.immediate_trace ?? {};
+    const finalPlans = Array.isArray(immediateTrace.final_plans) ? immediateTrace.final_plans : [];
+    let containsToo = finalPlans.some((p) => p?.too === true);
+    if (!containsToo) {
+      const finalPlanIds = Array.isArray(immediateTrace.final_plan_ids)
+        ? immediateTrace.final_plan_ids
+        : [];
+      if (finalPlanIds.length > 0 && Array.isArray(immediateTrace.input_plans)) {
+        const tooByPlanId = new Map(
+          immediateTrace.input_plans
+            .filter((p) => p?.plan_id)
+            .map((p) => [p.plan_id, p?.too === true]),
+        );
+        containsToo = finalPlanIds.some((pid) => tooByPlanId.get(pid) === true);
+      }
+    }
+
     const block = document.createElement("article");
-    block.className = "trace-iteration";
+    block.className = `trace-iteration${containsToo ? " trace-iteration-too" : ""}`;
     const title = document.createElement("h3");
     title.textContent = `Iteration ${iteration.iteration}`;
     block.append(title);
