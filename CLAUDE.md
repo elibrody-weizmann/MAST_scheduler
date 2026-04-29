@@ -73,6 +73,7 @@ Models are split into two files with distinct futures:
 
 - **Do not modify MAST_common** from within this repo unless there is no alternative. Changes to shared types belong in MAST_common's own development cycle and may break MAST_control.
 - **Do not mirror or duplicate types from MAST_common.** If a model type you need exists in `common.models.*`, import and use it directly. Creating a local copy (even with a note like "mirrors Batch") is not acceptable — it splits the source of truth and causes silent divergence. If a common type is incompatible (e.g. Pydantic v2 conflict), fix it in MAST_common or raise the issue rather than duplicating here.
+- **Prefer Pydantic models over plain dicts at all API and module boundaries.** When a function or endpoint has a stable, known schema — even if the data originates from `model_dump()` or manual construction — define a named `BaseModel` for it. `dict` is only acceptable as an intermediate within a single function scope. Using `dict | None` as a field type on a response model is a design smell; replace it with a typed model.
 
 ## Single source of truth for UI-visible data
 

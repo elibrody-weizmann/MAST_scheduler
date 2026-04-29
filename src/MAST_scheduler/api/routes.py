@@ -12,6 +12,7 @@ from ..models import (
     KNOWN_SITE_LABELS,
     KNOWN_SITES,
     MOCK_PRESETS,
+    ImmediateBatch,
     ImmediateRequest,
     ImmediateResponse,
     InlineImmediateRequest,
@@ -115,7 +116,7 @@ def _build_immediate_response(
             simulated_time=trace.simulated_time,
         )
     return ImmediateResponse(
-        batch=_serialize_batch(batch),
+        batch=ImmediateBatch(**_serialize_batch(batch)),
         feasible_plan_count=len(batch.plans),
         environment=environment,
         trace=trace if include_trace else None,

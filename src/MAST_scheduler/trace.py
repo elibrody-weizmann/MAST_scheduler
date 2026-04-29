@@ -16,6 +16,20 @@ TRACE_STAGE_PRIORITY = "priority"
 TRACE_STAGE_BUILD = "build"
 
 
+class SetupBreakdown(BaseModel):
+    spectrograph_switch_seconds: float = 0.0
+    grating_move_seconds: float = 0.0
+    lamp_warmup_seconds: float = 0.0
+    lamp_cooldown_seconds: float = 0.0
+    autofocus_seconds: float = 0.0
+    total_seconds: float = 0.0
+
+
+class TeardownBreakdown(BaseModel):
+    readout_seconds: float = 0.0
+    total_seconds: float = 0.0
+
+
 class TraceRationale(BaseModel):
     code: str
     message: str
@@ -111,6 +125,9 @@ class PredictedIterationTrace(BaseModel):
     batch_start: datetime
     batch_end: datetime
     setup_overhead_seconds: float
+    setup_breakdown: SetupBreakdown = Field(default_factory=SetupBreakdown)
+    teardown_overhead_seconds: float = 0.0
+    teardown_breakdown: TeardownBreakdown = Field(default_factory=TeardownBreakdown)
     duration_seconds: float
     immediate_trace: ImmediateScheduleTrace
     remaining_plan_ids_after_iteration: list[str] = Field(default_factory=list)

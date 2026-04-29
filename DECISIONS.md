@@ -1,5 +1,33 @@
 # Decisions
 
+## [2026-04-29] Surface setup/teardown breakdowns in trace UI via hover tooltip
+
+**Why:** The trace iteration chips showed only a flat `setup_overhead_seconds` total. The per-component breakdown (`SetupBreakdown`, `TeardownBreakdown`) was already computed and stored on `PredictedBatch` but was absent from `PredictedIterationTrace`, so the trace panel had no access to it. Inlining breakdown text directly into chips made them too wide and cluttered.
+
+**What:** `SetupBreakdown` and `TeardownBreakdown` moved from `models.py` into `trace.py` (they are scheduler-internal overhead records, not API-facing types). `models.py` re-imports and re-exports them to preserve downstream callsites. `PredictedIterationTrace` gained `setup_breakdown`, `teardown_overhead_seconds`, and `teardown_breakdown` fields. The scheduler now populates these fields when building each iteration trace. In the UI, Setup and Teardown chips are always shown (even at 0s); totals are in `m:ss` format; hovering reveals a CSS tooltip listing each nonzero component in whole seconds (e.g. `Spectrograph switch: 180s`).
+
+**Implications:** `PredictedIterationTrace` is now the authoritative source of overhead detail for the trace panel. `SetupBreakdown`/`TeardownBreakdown` are owned by `trace.py`; do not re-add them to `models.py`. The `makeTraceChips` JS helper now accepts an optional `tooltip` property per chip item.
+
+---
+
+## [2026-04-29] ImmediateBatch typed model replaces dict on ImmediateResponse
+
+**Why:** `ImmediateResponse.batch` was typed `dict | None`, even though `_serialize_batch` produces a fixed, known schema. This gave no schema validation, no IDE completion, and left a dead `batch.id` fallback in the UI that would never fire.
+
+**What:** `ImmediateBatch` Pydantic model added to `models.py` matching the exact fields produced by `_serialize_batch`. `ImmediateResponse.batch` changed to `ImmediateBatch | None`. `routes.py` wraps the serialized dict via `ImmediateBatch(**_serialize_batch(batch))` — Pydantic validates at construction and will raise immediately on schema drift. Dead `batch.id` fallback removed from `renderImmediate` in `app.js`.
+
+**Implications:** Any change to `_serialize_batch` output must be reflected in `ImmediateBatch`. The model does not include `lamp_on` or `calibration_filter` — those remain prediction-only fields on `PredictedBatch` and would require extending `_serialize_batch` to derive them from plan data.
+
+---
+
+## [2026-04-29] Pydantic models preferred over plain dicts at API boundaries
+
+**Why:** Using `dict` as a field type on response models (as was done with `ImmediateResponse.batch`) gives no validation, no schema documentation, and drifts silently. The `ImmediateBatch` fix made this pattern concrete.
+
+**What:** Added directive to `CLAUDE.md`: prefer named Pydantic `BaseModel` subclasses at all API and module boundaries; `dict` is acceptable only as an intermediate within a single function scope; `dict | None` as a response field type is a design smell.
+
+**Implications:** Existing uses of `dict` in response fields should be replaced as they are touched. New fields must not introduce raw `dict` types without a corresponding model.
+
 ## [2026-04-29] Split models.py into API models and trace/observability models
 
 **Why:** `models.py` mixed two categories with different futures: API/domain types that are candidates for migration to `MAST_common`, and scheduler-internal trace types that record decision internals and must stay in `MAST_scheduler`. Keeping them together would make the future migration noisy and create confusion about what belongs where.

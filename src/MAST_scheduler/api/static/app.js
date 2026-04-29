@@ -324,7 +324,7 @@ function renderImmediate(data) {
   elements.immediateSummary.className = "";
   renderSummary(elements.immediateSummary, [
     ["Feasible plans", data.feasible_plan_count],
-    ["Batch", batch.ulid ?? batch.id ?? "Created"],
+    ["Batch", batch.ulid ?? "Created"],
     ["Instrument", batch.instrument],
     ["Disperser", batch.disperser],
     ["Exposure time", batch.exposure_time],
@@ -354,17 +354,37 @@ function renderPrediction(data) {
     title.textContent = `${batch.instrument}${batch.disperser ? ` / ${batch.disperser}` : ""}`;
     const meta = document.createElement("div");
     meta.className = "batch-meta";
-    const overheadRow = batch.setup_overhead_seconds > 0
-      ? [`Setup overhead: ${formatMinutesSeconds(batch.setup_overhead_seconds)}`]
-      : [];
+    const overheadRows = [];
+    if (batch.setup_overhead_seconds > 0) {
+      overheadRows.push(`Setup overhead: ${formatMinutesSeconds(batch.setup_overhead_seconds)}`);
+      const bd = batch.setup_breakdown ?? {};
+      const breakdownParts = [
+        bd.spectrograph_switch_seconds > 0 && `spectrograph ${formatMinutesSeconds(bd.spectrograph_switch_seconds)}`,
+        bd.grating_move_seconds > 0 && `grating ${formatMinutesSeconds(bd.grating_move_seconds)}`,
+        bd.lamp_warmup_seconds > 0 && `lamp warmup ${formatMinutesSeconds(bd.lamp_warmup_seconds)}`,
+        bd.lamp_cooldown_seconds > 0 && `lamp cooldown ${formatMinutesSeconds(bd.lamp_cooldown_seconds)}`,
+        bd.autofocus_seconds > 0 && `autofocus ${formatMinutesSeconds(bd.autofocus_seconds)}`,
+      ].filter(Boolean);
+      if (breakdownParts.length > 0) {
+        overheadRows.push(`  ↳ ${breakdownParts.join(", ")}`);
+      }
+    }
+    const teardownRows = [];
+    const readout = batch.teardown_breakdown?.readout_seconds ?? 0;
+    if (readout > 0) {
+      teardownRows.push(`Teardown: ${formatMinutesSeconds(readout)}`);
+    }
     for (const value of [
       `${formatDateTime(batch.predicted_start)} - ${formatDateTime(batch.predicted_end)}`,
       formatDuration(batch.predicted_duration_seconds),
       `${batch.num_exposures} x ${batch.exposure_time}s`,
-      ...overheadRow,
+      batch.lamp_on != null ? `Lamp: ${batch.lamp_on ? "on" : "off"}` : null,
+      batch.calibration_filter ? `Cal filter: ${batch.calibration_filter}` : null,
+      ...overheadRows,
+      ...teardownRows,
       `Units: ${(batch.allocated_units ?? []).join(", ") || "-"}`,
       `Plans: ${(batch.plan_ids ?? []).join(", ") || "-"}`,
-    ]) {
+    ].filter((v) => v != null)) {
       const itemMeta = document.createElement("span");
       itemMeta.textContent = value;
       meta.append(itemMeta);
@@ -536,6 +556,9 @@ function makeTraceChips(items) {
     const chip = document.createElement("span");
     chip.className = `trace-chip ${item.className ?? ""}`.trim();
     chip.textContent = `${item.label}: ${item.value}`;
+    if (item.tooltip) {
+      chip.dataset.tooltip = item.tooltip;
+    }
     chips.append(chip);
   }
   return chips;
@@ -653,25 +676,38 @@ function renderPredictedTrace(trace) {
         iteration,
       ),
     );
-    block.append(
-      makeTraceChips([
-        {
-          label: "Setup overhead",
-          value: `${Math.round(Number(iteration.setup_overhead_seconds ?? 0))}s`,
-          className: "chip-input",
-        },
-        {
-          label: "Batch duration",
-          value: formatMinutesSeconds(iteration.duration_seconds),
-          className: "chip-kept",
-        },
-        {
-          label: "Remaining plans",
-          value: (iteration.remaining_plan_ids_after_iteration ?? []).length,
-          className: "chip-neutral",
-        },
-      ]),
-    );
+    const setupSeconds = Number(iteration.setup_overhead_seconds ?? 0);
+    const bd = iteration.setup_breakdown ?? {};
+    const setupBreakdownLines = [
+      bd.spectrograph_switch_seconds > 0 && `Spectrograph switch: ${Math.round(bd.spectrograph_switch_seconds)}s`,
+      bd.grating_move_seconds > 0 && `Grating move: ${Math.round(bd.grating_move_seconds)}s`,
+      bd.lamp_warmup_seconds > 0 && `Lamp warmup: ${Math.round(bd.lamp_warmup_seconds)}s`,
+      bd.lamp_cooldown_seconds > 0 && `Lamp cooldown: ${Math.round(bd.lamp_cooldown_seconds)}s`,
+      bd.autofocus_seconds > 0 && `Autofocus: ${Math.round(bd.autofocus_seconds)}s`,
+    ].filter(Boolean);
+
+    const teardownSeconds = Number(iteration.teardown_overhead_seconds ?? 0);
+    const tbd = iteration.teardown_breakdown ?? {};
+    const teardownBreakdownLines = [
+      tbd.readout_seconds > 0 && `Readout: ${Math.round(tbd.readout_seconds)}s`,
+    ].filter(Boolean);
+
+    block.append(makeTraceChips([
+      {
+        label: "Setup",
+        value: formatMinutesSeconds(setupSeconds),
+        className: "chip-input",
+        tooltip: setupBreakdownLines.length > 0 ? setupBreakdownLines.join("\n") : null,
+      },
+      {
+        label: "Teardown",
+        value: formatMinutesSeconds(teardownSeconds),
+        className: "chip-input",
+        tooltip: teardownBreakdownLines.length > 0 ? teardownBreakdownLines.join("\n") : null,
+      },
+      { label: "Batch duration", value: formatMinutesSeconds(iteration.duration_seconds), className: "chip-kept" },
+      { label: "Remaining plans", value: (iteration.remaining_plan_ids_after_iteration ?? []).length, className: "chip-neutral" },
+    ]));
     block.append(renderImmediateTrace(iteration.immediate_trace ?? {}));
     wrapper.append(block);
   }

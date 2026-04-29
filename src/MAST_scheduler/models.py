@@ -4,21 +4,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator
 
-from .trace import ImmediateScheduleTrace, PredictedScheduleTrace
+from .trace import ImmediateScheduleTrace, PredictedScheduleTrace, SetupBreakdown, TeardownBreakdown
 
-
-class SetupBreakdown(BaseModel):
-    spectrograph_switch_seconds: float = 0.0
-    grating_move_seconds: float = 0.0
-    lamp_warmup_seconds: float = 0.0
-    lamp_cooldown_seconds: float = 0.0
-    autofocus_seconds: float = 0.0
-    total_seconds: float = 0.0
-
-
-class TeardownBreakdown(BaseModel):
-    readout_seconds: float = 0.0
-    total_seconds: float = 0.0
+__all__ = ["SetupBreakdown", "TeardownBreakdown"]
 
 
 class PredictedBatch(BaseModel):
@@ -57,8 +45,22 @@ class ImmediateRequest(BaseModel):
     include_trace: bool = False
 
 
+class ImmediateBatch(BaseModel):
+    ulid: str
+    immediate: bool
+    spec_assignment: dict | None = None
+    predicted_duration: float | None = None
+    exposure_duration: float
+    number_of_exposures: int
+    instrument: str | None = None
+    disperser: str | None = None
+    exposure_time: float
+    num_exposures: int
+    allocated_units: list[str]
+
+
 class ImmediateResponse(BaseModel):
-    batch: dict | None
+    batch: ImmediateBatch | None
     feasible_plan_count: int
     message: str = ""
     environment: EnvironmentConditions | None = None

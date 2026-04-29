@@ -58,8 +58,8 @@ src/MAST_scheduler/
 ├── filters.py     — PlanFilter fluent chain
 ├── builder.py     — BatchBuilder + setup overhead + condition score
 ├── scheduler.py   — Scheduler (immediate and predictive modes)
-├── models.py      — API/domain models: requests, responses, PredictedBatch, KNOWN_SITES (MAST_common candidates)
-├── trace.py       — Observability/trace models: TRACE_STAGE_* constants, all *Trace classes (stay in MAST_scheduler)
+├── models.py      — API/domain models: requests, responses, PredictedBatch, ImmediateBatch, KNOWN_SITES (MAST_common candidates)
+├── trace.py       — Observability/trace models: TRACE_STAGE_* constants, all *Trace classes, SetupBreakdown, TeardownBreakdown (stay in MAST_scheduler)
 └── api/
     ├── app.py     — FastAPI application with lifespan
     └── routes.py  — immediate/predict (path + inline), mock generator, status
@@ -91,6 +91,7 @@ The FastAPI app serves a dependency-free web interface at `/`. It lets operators
 - Run the immediate scheduler and inspect the selected batch; if it is currently daytime the scheduler automatically advances to astronomical dusk and marks the result as **Simulated**
 - Predict the night for any future date (simulation starts at that night's dusk) or resume mid-night from the exact timestamp given
 - Inspect stage-by-stage trace details with grouped keep/drop rationales, including full plan objects for the final selected batch
+- View per-iteration setup and teardown overhead in the trace timeline; hover over Setup/Teardown chips to see per-component breakdowns in seconds
 - Copy JSON from all raw JSON panels, including the generated plans list
 
 Plan paths entered in the UI must be readable by the FastAPI process. The UI does
@@ -119,7 +120,7 @@ Returns the next batch to run right now.
 }
 ```
 
-Response includes the `BatchData` dict, `feasible_plan_count`, and echoed `environment`.
+Response includes an `ImmediateBatch` object (typed Pydantic model: `ulid`, `instrument`, `disperser`, `exposure_time`, `num_exposures`, `allocated_units`, plus raw `BatchData` fields), `feasible_plan_count`, and echoed `environment`.
 
 ### `POST /scheduler/immediate/inline`
 
@@ -141,7 +142,10 @@ instead of `plan_paths`.
 
 ### `POST /scheduler/predict`
 
-Simulates the night and returns an ordered list of `PredictedBatch` objects with start/end times. Each batch includes `setup_overhead_seconds` (the inter-batch transition cost: spectrograph switch, grating move, lamp warmup/cooldown, autofocus).
+Simulates the night and returns an ordered list of `PredictedBatch` objects with start/end times. Each batch includes:
+- `setup_overhead_seconds` / `setup_breakdown` — inter-batch transition cost (spectrograph switch, grating move, lamp warmup/cooldown, autofocus) with per-component breakdown
+- `teardown_overhead_seconds` / `teardown_breakdown` — post-batch readout time
+- `lamp_on`, `calibration_filter` — calibration context for the batch
 
 `start_datetime` resolution:
 - **Within the current ongoing night** — simulation begins at the exact timestamp given (mid-night resume).
