@@ -39,6 +39,9 @@ const elements = {
   environmentTemperature: document.querySelector("#environment-temperature"),
   environmentWindSpeed: document.querySelector("#environment-wind-speed"),
   environmentCloudCover: document.querySelector("#environment-cloud-cover"),
+  environmentMoonIllumination: document.querySelector("#environment-moon-illumination"),
+  environmentMoonAlt: document.querySelector("#environment-moon-alt"),
+  environmentMoonAz: document.querySelector("#environment-moon-az"),
   environmentSummary: document.querySelector("#environment-summary"),
   immediateNow: document.querySelector("#immediate-now"),
   predictionStart: document.querySelector("#prediction-start"),
@@ -222,6 +225,9 @@ function buildEnvironmentPayload() {
     temperature_c: parseOptionalNumber(elements.environmentTemperature.value),
     wind_speed_mps: parseOptionalNumber(elements.environmentWindSpeed.value),
     cloud_cover_percent: parseOptionalNumber(elements.environmentCloudCover.value),
+    moon_illumination_pct: parseOptionalNumber(elements.environmentMoonIllumination.value),
+    moon_alt_deg: parseOptionalNumber(elements.environmentMoonAlt.value),
+    moon_az_deg: parseOptionalNumber(elements.environmentMoonAz.value),
   };
   const hasAnyValue = Object.values(environment).some((value) => value !== null);
   return hasAnyValue ? environment : null;

@@ -33,6 +33,9 @@ class EnvironmentConditions(BaseModel):
     temperature_c: float | None = None
     wind_speed_mps: float | None = None
     cloud_cover_percent: float | None = None
+    moon_illumination_pct: float | None = None
+    moon_alt_deg: float | None = None
+    moon_az_deg: float | None = None
 
 
 class ImmediateRequest(BaseModel):
@@ -111,6 +114,8 @@ MOCK_PRESET_HIGHSPEC_HEAVY = "highspec-heavy"
 MOCK_PRESET_QUORUM_STRESS = "quorum-stress"
 MOCK_PRESET_REPEAT_STRESS = "repeat-stress"
 MOCK_PRESET_LONG_EXPOSURE = "long-exposure"
+MOCK_PRESET_DARK_SKY = "dark-sky"
+MOCK_PRESET_BRIGHT_MOON = "bright-moon"
 MOCK_PRESETS = (
     MOCK_PRESET_BALANCED,
     MOCK_PRESET_CONSTRAINTS_HEAVY,
@@ -118,6 +123,8 @@ MOCK_PRESETS = (
     MOCK_PRESET_QUORUM_STRESS,
     MOCK_PRESET_REPEAT_STRESS,
     MOCK_PRESET_LONG_EXPOSURE,
+    MOCK_PRESET_DARK_SKY,
+    MOCK_PRESET_BRIGHT_MOON,
 )
 
 

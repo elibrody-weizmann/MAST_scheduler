@@ -1,5 +1,15 @@
 # Decisions
 
+## [2026-04-29] Moon constraint test coverage, presets, and UI moon editor
+
+**Why:** `TestMoonSeparation` was missing the passing case and all boundary tests. Neither moon class had trace-rationale assertions. No presets existed for moon-focused stress testing. The mock plans panel gave no control over moon constraint generation — users had to accept server defaults.
+
+**What:** Extracted `_moon_sep_mocks()` helper to reduce repetitive observer mocking. Added 6 new tests: `test_passes_at_exact_threshold` in both phase and separation classes; passing/boundary/just-below cases for separation; two `TestTraceStages` tests asserting rationale codes and value keys for `moon_phase_exceeded` and `moon_separation_too_small`. Added `dark-sky` and `bright-moon` presets with 100% constraint probability and appropriate phase/distance ranges; each preset can also specify `moon_max_phase_range` and `moon_min_distance_range` overrides consumed by `_build_constraints`. Added `moon_max_phase_range` and `moon_min_distance_range` optional fields to `MockPlanGenerateRequest` so the UI can override ranges per-request. Added a collapsible moon editor panel to the mock plans form (include toggle + four range inputs); `app.js` reads these and includes them in the POST payload.
+
+**Implications:** Rationale codes `moon_phase_exceeded` and `moon_separation_too_small` are now asserted in tests — keep them stable. New request fields are optional (`None` = use preset/default), so existing API callers are unaffected. New presets appear in the UI automatically via the `/scheduler/mock-plans/presets` endpoint.
+
+---
+
 ## [2026-04-29] Surface setup/teardown breakdowns in trace UI via hover tooltip
 
 **Why:** The trace iteration chips showed only a flat `setup_overhead_seconds` total. The per-component breakdown (`SetupBreakdown`, `TeardownBreakdown`) was already computed and stored on `PredictedBatch` but was absent from `PredictedIterationTrace`, so the trace panel had no access to it. Inlining breakdown text directly into chips made them too wide and cluttered.

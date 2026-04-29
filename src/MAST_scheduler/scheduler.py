@@ -13,7 +13,7 @@ from common.models.plans import Plan
 from .builder import BatchBuilder, _compute_setup_overhead, _compute_teardown
 from .config import SchedulerConfig
 from .filters import PlanFilter
-from .models import PredictedBatch, SetupBreakdown, TeardownBreakdown
+from .models import EnvironmentConditions, PredictedBatch, SetupBreakdown, TeardownBreakdown
 from .trace import (
     ImmediateScheduleTrace,
     PlanTraceSummary,
@@ -36,6 +36,7 @@ class Scheduler:
         operational_units: list[str],
         now: datetime | None = None,
         completed_tonight: dict[str, int] | None = None,
+        environment: EnvironmentConditions | None = None,
     ) -> BatchData | None:
         batch, _ = self.make_immediate_batch_with_trace(
             pending_plans=pending_plans,
@@ -43,6 +44,7 @@ class Scheduler:
             operational_units=operational_units,
             now=now,
             completed_tonight=completed_tonight,
+            environment=environment,
         )
         return batch
 
@@ -53,6 +55,7 @@ class Scheduler:
         operational_units: list[str],
         now: datetime | None = None,
         completed_tonight: dict[str, int] | None = None,
+        environment: EnvironmentConditions | None = None,
     ) -> tuple[BatchData | None, ImmediateScheduleTrace]:
         if now is None:
             now = datetime.now(tz=UTC)
@@ -71,6 +74,7 @@ class Scheduler:
             now=now,
             operational_units=operational_units,
             config=self.config,
+            environment=environment,
         ).run_full_chain_with_trace(completed_tonight)
         trace.filter_stages = filter_stages
 
@@ -97,6 +101,7 @@ class Scheduler:
         site: EarthLocation,
         start_datetime: datetime,
         operational_units: list[str] | None = None,
+        environment: EnvironmentConditions | None = None,
     ) -> tuple[list[PredictedBatch], PredictedScheduleTrace]:
         observer = Observer(location=site)
         t0 = Time(start_datetime)
@@ -123,6 +128,7 @@ class Scheduler:
                 operational_units=units,
                 now=current_time,
                 completed_tonight=completed_tonight,
+                environment=environment,
             )
             if batch is None:
                 iteration += 1
@@ -199,12 +205,14 @@ class Scheduler:
         site: EarthLocation,
         start_datetime: datetime,
         operational_units: list[str] | None = None,
+        environment: EnvironmentConditions | None = None,
     ) -> list[PredictedBatch]:
         batches, _ = self.make_predicted_batches_with_trace(
             pending_plans=pending_plans,
             site=site,
             start_datetime=start_datetime,
             operational_units=operational_units,
+            environment=environment,
         )
         return batches
 

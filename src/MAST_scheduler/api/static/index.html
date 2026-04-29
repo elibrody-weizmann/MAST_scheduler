@@ -130,7 +130,7 @@
           </label>
 
           <div class="field field-wide mock-panel">
-            <span>Environmental conditions (input only)</span>
+            <span>Environmental conditions</span>
             <div class="mock-grid env-grid">
               <label class="field">
                 <span>Humidity (%)</span>
@@ -148,10 +148,22 @@
                 <span>Cloud cover (%)</span>
                 <input id="environment-cloud-cover" type="number" min="0" max="100" step="0.1" />
               </label>
+              <label class="field">
+                <span>Moon illumination (%)</span>
+                <input id="environment-moon-illumination" type="number" min="0" max="100" step="1" placeholder="computed" />
+              </label>
+              <label class="field">
+                <span>Moon altitude (°)</span>
+                <input id="environment-moon-alt" type="number" min="-90" max="90" step="1" placeholder="computed" />
+              </label>
+              <label class="field">
+                <span>Moon azimuth (°)</span>
+                <input id="environment-moon-az" type="number" min="0" max="360" step="1" placeholder="computed" />
+              </label>
             </div>
             <small>
-              Context is included in API payloads and echoed in responses, but does not affect
-              feasibility filtering yet.
+              Moon illumination and position override the computed values and affect moon constraint filtering.
+              Other fields are echoed in responses but do not yet affect filtering.
             </small>
           </div>
 

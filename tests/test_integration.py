@@ -470,7 +470,7 @@ class TestAPI:
         env_data = with_environment.json()
         assert baseline_data["batch"] == env_data["batch"] is None
         assert baseline_data["feasible_plan_count"] == env_data["feasible_plan_count"] == 0
-        assert env_data["environment"] == environment
+        assert environment.items() <= env_data["environment"].items()
 
     def test_immediate_unknown_site(self):
         with TestClient(app) as client:
@@ -591,7 +591,7 @@ class TestAPI:
             )
         assert response.status_code == 200
         data = response.json()
-        assert data["environment"] == environment
+        assert environment.items() <= data["environment"].items()
 
     def test_inline_requires_plans(self):
         with TestClient(app) as client:

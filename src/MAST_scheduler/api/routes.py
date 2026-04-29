@@ -136,6 +136,7 @@ def immediate(req: ImmediateRequest, request: Request) -> ImmediateResponse:
         operational_units=req.operational_units,
         now=req.now,
         completed_tonight=req.completed_tonight,
+        environment=req.environment,
     )
     return _build_immediate_response(batch, trace, req.include_trace, req.environment)
 
@@ -151,6 +152,7 @@ def immediate_inline(req: InlineImmediateRequest, request: Request) -> Immediate
         operational_units=req.operational_units,
         now=req.now,
         completed_tonight=req.completed_tonight,
+        environment=req.environment,
     )
     return _build_immediate_response(batch, trace, req.include_trace, req.environment)
 
@@ -175,6 +177,7 @@ def predict(req: PredictRequest, request: Request) -> PredictResponse:
             site=site,
             start_datetime=req.start_datetime,
             operational_units=req.operational_units,
+            environment=req.environment,
         )
     else:
         batches = scheduler.make_predicted_batches(
@@ -182,6 +185,7 @@ def predict(req: PredictRequest, request: Request) -> PredictResponse:
             site=site,
             start_datetime=req.start_datetime,
             operational_units=req.operational_units,
+            environment=req.environment,
         )
         trace = None
 
@@ -214,6 +218,7 @@ def predict_inline(req: InlinePredictRequest, request: Request) -> PredictRespon
             site=site,
             start_datetime=req.start_datetime,
             operational_units=req.operational_units,
+            environment=req.environment,
         )
     else:
         batches = scheduler.make_predicted_batches(
@@ -221,6 +226,7 @@ def predict_inline(req: InlinePredictRequest, request: Request) -> PredictRespon
             site=site,
             start_datetime=req.start_datetime,
             operational_units=req.operational_units,
+            environment=req.environment,
         )
         trace = None
 

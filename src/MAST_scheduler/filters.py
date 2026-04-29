@@ -12,6 +12,7 @@ from common.models.constraints import WhenToRepeat
 from common.models.plans import Plan
 
 from .config import SchedulerConfig
+from .models import EnvironmentConditions
 from .trace import (
     TRACE_STAGE_AIRMASS,
     TRACE_STAGE_ASTRONOMICAL_NIGHT,
@@ -54,6 +55,7 @@ class PlanFilter:
         operational_units: list[str],
         config: SchedulerConfig,
         observer: Observer | None = None,
+        environment: EnvironmentConditions | None = None,
     ) -> None:
         self._plans = list(plans)
         self._site = site
@@ -62,6 +64,7 @@ class PlanFilter:
         self._config = config
         self._observer = observer or Observer(location=site)
         self._astropy_time = Time(now)
+        self._environment = environment
         self._trace_stages: list[FilterStageTrace] = []
 
     @property
@@ -280,7 +283,11 @@ class PlanFilter:
             or plan.constraints.moon.max_phase is None
         ):
             return True, []
-        illumination_pct = float(self._observer.moon_illumination(self._astropy_time) * 100.0)
+        env_illum = self._environment.moon_illumination_pct if self._environment else None
+        if env_illum is not None:
+            illumination_pct = float(env_illum)
+        else:
+            illumination_pct = float(self._observer.moon_illumination(self._astropy_time) * 100.0)
         max_phase = float(plan.constraints.moon.max_phase)
         if illumination_pct > max_phase:
             return False, [
@@ -299,8 +306,17 @@ class PlanFilter:
             or plan.constraints.moon.min_distance is None
         ):
             return True, []
-        moon_coord = self._observer.moon_altaz(self._astropy_time)
-        moon_skycoord = SkyCoord(alt=moon_coord.alt, az=moon_coord.az, frame=moon_coord.frame)
+        env = self._environment
+        if env is not None and env.moon_alt_deg is not None and env.moon_az_deg is not None:
+            altaz_frame = AltAz(obstime=self._astropy_time, location=self._site)
+            moon_skycoord = SkyCoord(
+                alt=env.moon_alt_deg * u.deg,
+                az=env.moon_az_deg * u.deg,
+                frame=altaz_frame,
+            )
+        else:
+            moon_coord = self._observer.moon_altaz(self._astropy_time)
+            moon_skycoord = SkyCoord(alt=moon_coord.alt, az=moon_coord.az, frame=moon_coord.frame)
         target_coord = _plan_skycoord(plan)
         separation_deg = float(target_coord.separation(moon_skycoord).deg)
         min_distance = float(plan.constraints.moon.min_distance)

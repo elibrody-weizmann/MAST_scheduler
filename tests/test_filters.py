@@ -99,6 +99,15 @@ class TestAirmass:
         assert len(result) == 1
 
 
+def _moon_sep_mocks(separation_deg: float) -> tuple[MagicMock, MagicMock]:
+    """Return (observer, target_coord_mock) for moon separation tests."""
+    obs = MagicMock(spec=Observer)
+    obs.moon_altaz.return_value = MagicMock()
+    target = MagicMock()
+    target.separation.return_value = MagicMock(deg=separation_deg)
+    return obs, target
+
+
 class TestMoonPhase:
     def test_passes_when_no_constraint(self):
         plan = load_plan("minimal")
@@ -119,6 +128,13 @@ class TestMoonPhase:
         result = make_filter([plan], observer=obs).moon_phase().plans
         assert len(result) == 1
 
+    def test_passes_at_exact_threshold(self):
+        plan = load_plan("moon")  # max_phase = 30%
+        obs = MagicMock(spec=Observer)
+        obs.moon_illumination.return_value = 0.30  # exactly 30% — equal is not exceeded
+        result = make_filter([plan], observer=obs).moon_phase().plans
+        assert len(result) == 1
+
 
 class TestMoonSeparation:
     def test_passes_when_no_constraint(self):
@@ -129,21 +145,54 @@ class TestMoonSeparation:
 
     def test_blocks_close_moon(self):
         plan = load_plan("moon")  # min_distance = 45°
-        obs = MagicMock(spec=Observer)
-        moon_altaz = MagicMock()
-        moon_altaz.alt = MagicMock()
-        moon_altaz.az = MagicMock()
-        moon_altaz.frame = MagicMock()
-        obs.moon_altaz.return_value = moon_altaz
+        obs, target = _moon_sep_mocks(10.0)  # 10° < 45°
+        with (
+            patch("MAST_scheduler.filters.SkyCoord"),
+            patch(
+                "MAST_scheduler.filters._plan_skycoord",
+                return_value=target,
+            ),
+        ):
+            result = make_filter([plan], observer=obs).moon_separation().plans
+        assert result == []
 
-        with patch("MAST_scheduler.filters.SkyCoord") as MockSkyCoord:
-            close_moon = MagicMock()
-            target = MagicMock()
-            target.separation.return_value = MagicMock(deg=10.0)  # 10° < 45°
-            MockSkyCoord.side_effect = [close_moon, target]
+    def test_passes_sufficient_separation(self):
+        plan = load_plan("moon")  # min_distance = 45°
+        obs, target = _moon_sep_mocks(60.0)  # 60° > 45°
+        with (
+            patch("MAST_scheduler.filters.SkyCoord"),
+            patch(
+                "MAST_scheduler.filters._plan_skycoord",
+                return_value=target,
+            ),
+        ):
+            result = make_filter([plan], observer=obs).moon_separation().plans
+        assert len(result) == 1
 
-            with patch("MAST_scheduler.filters._plan_skycoord", return_value=target):
-                result = make_filter([plan], observer=obs).moon_separation().plans
+    def test_passes_at_exact_threshold(self):
+        plan = load_plan("moon")  # min_distance = 45°
+        obs, target = _moon_sep_mocks(45.0)  # equal — not below minimum
+        with (
+            patch("MAST_scheduler.filters.SkyCoord"),
+            patch(
+                "MAST_scheduler.filters._plan_skycoord",
+                return_value=target,
+            ),
+        ):
+            result = make_filter([plan], observer=obs).moon_separation().plans
+        assert len(result) == 1
+
+    def test_blocks_just_below_threshold(self):
+        plan = load_plan("moon")  # min_distance = 45°
+        obs, target = _moon_sep_mocks(44.9)
+        with (
+            patch("MAST_scheduler.filters.SkyCoord"),
+            patch(
+                "MAST_scheduler.filters._plan_skycoord",
+                return_value=target,
+            ),
+        ):
+            result = make_filter([plan], observer=obs).moon_separation().plans
         assert result == []
 
 
@@ -208,3 +257,37 @@ class TestTraceStages:
         time_window_stage = next(stage for stage in stages if stage.stage == "within_time_window")
         assert len(time_window_stage.dropped) == 1
         assert time_window_stage.dropped[0].rationales
+
+    def test_moon_phase_drop_records_rationale(self):
+        plan = load_plan("moon")  # max_phase = 30%
+        obs = MagicMock(spec=Observer)
+        obs.is_night.return_value = True
+        obs.moon_illumination.return_value = 0.9  # 90% — will fail moon_phase
+        obs.moon_altaz.return_value = MagicMock()
+        _, stages = make_filter([plan], observer=obs).run_full_chain_with_trace({})
+        moon_stage = next(stage for stage in stages if stage.stage == "moon_phase")
+        assert len(moon_stage.dropped) == 1
+        rationale = moon_stage.dropped[0].rationales[0]
+        assert rationale.code == "moon_phase_exceeded"
+        assert "illumination_pct" in rationale.values
+        assert "max_phase_pct" in rationale.values
+
+    def test_moon_separation_drop_records_rationale(self):
+        plan = load_plan("moon")  # min_distance = 45°
+        obs, target = _moon_sep_mocks(10.0)  # 10° < 45°
+        obs.is_night.return_value = True
+        obs.moon_illumination.return_value = 0.1  # passes moon_phase (10% < 30%)
+        with (
+            patch("MAST_scheduler.filters.SkyCoord"),
+            patch(
+                "MAST_scheduler.filters._plan_skycoord",
+                return_value=target,
+            ),
+        ):
+            _, stages = make_filter([plan], observer=obs).run_full_chain_with_trace({})
+        moon_stage = next(stage for stage in stages if stage.stage == "moon_separation")
+        assert len(moon_stage.dropped) == 1
+        rationale = moon_stage.dropped[0].rationales[0]
+        assert rationale.code == "moon_separation_too_small"
+        assert "separation_deg" in rationale.values
+        assert "min_distance_deg" in rationale.values

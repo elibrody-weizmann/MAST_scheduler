@@ -6,7 +6,9 @@ from datetime import UTC, datetime, timedelta
 
 from .models import (
     MOCK_PRESET_BALANCED,
+    MOCK_PRESET_BRIGHT_MOON,
     MOCK_PRESET_CONSTRAINTS_HEAVY,
+    MOCK_PRESET_DARK_SKY,
     MOCK_PRESET_HIGHSPEC_HEAVY,
     MOCK_PRESET_LONG_EXPOSURE,
     MOCK_PRESET_QUORUM_STRESS,
@@ -65,6 +67,20 @@ _PRESET_OVERRIDES = {
         "exposure_range_seconds": (900.0, 5400.0),
         "num_exposures_range": (3, 10),
     },
+    MOCK_PRESET_DARK_SKY: {
+        "highspec_probability": 0.4,
+        "constraints_probability": 1.0,
+        "too_probability": 0.1,
+        "moon_max_phase_range": (5.0, 20.0),
+        "moon_min_distance_range": (60.0, 120.0),
+    },
+    MOCK_PRESET_BRIGHT_MOON: {
+        "highspec_probability": 0.4,
+        "constraints_probability": 1.0,
+        "too_probability": 0.1,
+        "moon_max_phase_range": (70.0, 100.0),
+        "moon_min_distance_range": (5.0, 20.0),
+    },
 }
 
 
@@ -72,7 +88,8 @@ def generate_mock_plans(req: MockPlanGenerateRequest) -> MockPlanGenerateRespons
     _validate_generate_request(req)
     rng = random.Random(req.seed if req.seed is not None else 0)
     preset = _PRESET_OVERRIDES[req.preset]
-    base_time = datetime(2026, 4, 27, 0, 0, tzinfo=UTC)
+    today = datetime.now(tz=UTC)
+    base_time = today.replace(hour=0, minute=0, second=0, microsecond=0)
     plans: list[dict] = []
 
     for index in range(req.count):
@@ -240,9 +257,11 @@ def _build_constraints(
     if req.include_airmass_constraints:
         constraints["airmass"] = {"max": round(rng.uniform(1.2, 2.2), 2)}
     if req.include_moon_constraints:
+        phase_range = preset.get("moon_max_phase_range", (15.0, 80.0))
+        dist_range = preset.get("moon_min_distance_range", (15.0, 90.0))
         constraints["moon"] = {
-            "max_phase": round(rng.uniform(15, 80), 2),
-            "min_distance": round(rng.uniform(15, 90), 2),
+            "max_phase": round(rng.uniform(*phase_range), 2),
+            "min_distance": round(rng.uniform(*dist_range), 2),
         }
     if req.include_seeing_constraints:
         constraints["seeing"] = {"max": round(rng.uniform(1.0, 4.0), 1)}
