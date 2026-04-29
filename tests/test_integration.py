@@ -730,4 +730,6 @@ class TestAPI:
         assert len(data["trace"]["iterations"]) == 1
         first_iteration = data["trace"]["iterations"][0]
         assert first_iteration["duration_seconds"] == 0.0
+        assert first_iteration["num_exposures"] == 0
+        assert first_iteration["exposure_time"] == 0.0
         assert first_iteration["immediate_trace"]["final_plan_ids"] == []

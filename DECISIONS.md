@@ -1,5 +1,16 @@
 # Decisions
 
+
+## [2026-04-29] Fold setup/teardown into batch duration trace chip
+
+**Why:** Operators need a single “how long will this iteration take?” value that includes setup and teardown overhead, with an at-a-glance indicator when nonzero setup exists and a clear breakdown on hover (without adding extra chips or widening the trace row).
+
+**What:** The predictive trace UI now folds setup and teardown into the “Batch duration” chip value: `setup_overhead_seconds + duration_seconds + teardown_overhead_seconds`. When `setup_overhead_seconds > 0`, the chip label appends a timer emoji (`⏱️`). Hovering over the chip shows a three-phase breakdown (**Setup**, **Operation**, **Teardown**) with totals and indented component lines. `PredictedIterationTrace` was extended with `num_exposures` and `exposure_time` so the tooltip can show exposure count/time alongside the existing `duration_seconds`.
+
+**Implications:** The trace timeline should treat “Batch duration” as total elapsed iteration time (including overhead), and any consumer that needs exposure-only time should use `duration_seconds`. The new trace fields (`num_exposures`, `exposure_time`) are the canonical exposure context for iteration-level tooltips.
+
+---
+
 ## [2026-04-29] Moon constraint test coverage, presets, and UI moon editor
 
 **Why:** `TestMoonSeparation` was missing the passing case and all boundary tests. Neither moon class had trace-rationale assertions. No presets existed for moon-focused stress testing. The mock plans panel gave no control over moon constraint generation — users had to accept server defaults.

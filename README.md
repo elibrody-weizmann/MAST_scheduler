@@ -91,7 +91,7 @@ The FastAPI app serves a dependency-free web interface at `/`. It lets operators
 - Run the immediate scheduler and inspect the selected batch; if it is currently daytime the scheduler automatically advances to astronomical dusk and marks the result as **Simulated**
 - Predict the night for any future date (simulation starts at that night's dusk) or resume mid-night from the exact timestamp given
 - Inspect stage-by-stage trace details with grouped keep/drop rationales, including full plan objects for the final selected batch
-- View per-iteration setup and teardown overhead in the trace timeline; hover over Setup/Teardown chips to see per-component breakdowns in seconds
+- View per-iteration batch duration (setup + exposure + teardown) in the trace timeline; hover over the Batch duration chip to see per-component breakdowns in seconds
 - Copy JSON from all raw JSON panels, including the generated plans list
 
 Plan paths entered in the UI must be readable by the FastAPI process. The UI does

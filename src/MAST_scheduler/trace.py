@@ -129,6 +129,8 @@ class PredictedIterationTrace(BaseModel):
     teardown_overhead_seconds: float = 0.0
     teardown_breakdown: TeardownBreakdown = Field(default_factory=TeardownBreakdown)
     duration_seconds: float
+    num_exposures: int = 0
+    exposure_time: float = 0.0
     immediate_trace: ImmediateScheduleTrace
     remaining_plan_ids_after_iteration: list[str] = Field(default_factory=list)
 

@@ -139,6 +139,8 @@ class Scheduler:
                         batch_end=current_time,
                         setup_overhead_seconds=0.0,
                         duration_seconds=0.0,
+                        num_exposures=0,
+                        exposure_time=0.0,
                         immediate_trace=immediate_trace,
                         remaining_plan_ids_after_iteration=[_plan_id(plan) for plan in remaining],
                     )
@@ -189,6 +191,8 @@ class Scheduler:
                     teardown_overhead_seconds=float(teardown_overhead),
                     teardown_breakdown=teardown_breakdown,
                     duration_seconds=float(duration),
+                    num_exposures=batch.number_of_exposures,
+                    exposure_time=batch.exposure_duration,
                     immediate_trace=immediate_trace,
                     remaining_plan_ids_after_iteration=[_plan_id(plan) for plan in remaining],
                 )

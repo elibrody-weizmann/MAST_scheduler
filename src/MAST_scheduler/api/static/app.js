@@ -576,8 +576,46 @@ function makeTraceChips(items) {
     const chip = document.createElement("span");
     chip.className = `trace-chip ${item.className ?? ""}`.trim();
     chip.textContent = `${item.label}: ${item.value}`;
-    if (item.tooltip) {
-      chip.dataset.tooltip = item.tooltip;
+    if (item.tooltipElement instanceof HTMLElement) {
+      const tooltipEl = item.tooltipElement;
+
+      // Make tooltip behavior robust even if CSS isn't loaded/takes time:
+      // keep it out of normal layout and hidden until hover.
+      tooltipEl.style.position = "absolute";
+      tooltipEl.style.bottom = "auto";
+      tooltipEl.style.top = "calc(100% + 8px)";
+      tooltipEl.style.left = "50%";
+      tooltipEl.style.transform = "translateX(-50%)";
+      tooltipEl.style.zIndex = "10";
+      tooltipEl.style.opacity = "0";
+      tooltipEl.style.pointerEvents = "none";
+      tooltipEl.style.whiteSpace = "normal";
+      tooltipEl.style.background = "rgb(15 23 42 / 0.97)";
+      tooltipEl.style.border = "1px solid rgb(51 65 85 / 0.55)";
+      tooltipEl.style.borderRadius = "0.4rem";
+      tooltipEl.style.color = "var(--text)";
+      tooltipEl.style.fontSize = "0.75rem";
+      tooltipEl.style.fontWeight = "400";
+      tooltipEl.style.lineHeight = "1.4";
+      tooltipEl.style.padding = "0.35rem 0.6rem";
+      tooltipEl.style.padding = "0.45rem 0.75rem";
+      tooltipEl.style.maxWidth = "none";
+      tooltipEl.style.maxHeight = "none";
+      tooltipEl.style.overflow = "visible";
+
+      chip.append(tooltipEl);
+      chip.addEventListener("mouseenter", () => {
+        tooltipEl.style.opacity = "1";
+      });
+      chip.addEventListener("mouseleave", () => {
+        tooltipEl.style.opacity = "0";
+      });
+    } else if (item.tooltip) {
+      const tooltipEl = document.createElement("span");
+      tooltipEl.className = "trace-tooltip";
+      tooltipEl.textContent = item.tooltip;
+      tooltipEl.style.whiteSpace = "pre";
+      chip.append(tooltipEl);
     }
     chips.append(chip);
   }
@@ -617,9 +655,8 @@ function renderImmediateTrace(trace) {
     });
 
     const stageLabel = document.createElement("span");
-    stageLabel.className = `trace-item trace-stage-label ${
-      dropped > 0 ? "stage-dropped" : "stage-kept"
-    }`.trim();
+    stageLabel.className = `trace-item trace-stage-label ${dropped > 0 ? "stage-dropped" : "stage-kept"
+      }`.trim();
     stageLabel.textContent = stage.label;
     stageHeader.append(
       stageLabel,
@@ -716,35 +753,87 @@ function renderPredictedTrace(trace) {
     const setupSeconds = Number(iteration.setup_overhead_seconds ?? 0);
     const bd = iteration.setup_breakdown ?? {};
     const setupBreakdownLines = [
-      bd.spectrograph_switch_seconds > 0 && `Spectrograph switch: ${Math.round(bd.spectrograph_switch_seconds)}s`,
-      bd.grating_move_seconds > 0 && `Grating move: ${Math.round(bd.grating_move_seconds)}s`,
-      bd.lamp_warmup_seconds > 0 && `Lamp warmup: ${Math.round(bd.lamp_warmup_seconds)}s`,
-      bd.lamp_cooldown_seconds > 0 && `Lamp cooldown: ${Math.round(bd.lamp_cooldown_seconds)}s`,
+      bd.spectrograph_switch_seconds > 0 &&
+      `Spectrograph switch: ${Math.round(bd.spectrograph_switch_seconds)}s`,
+      bd.grating_move_seconds > 0 &&
+      `Grating move: ${Math.round(bd.grating_move_seconds)}s`,
+      bd.lamp_warmup_seconds > 0 &&
+      `Lamp warmup: ${Math.round(bd.lamp_warmup_seconds)}s`,
+      bd.lamp_cooldown_seconds > 0 &&
+      `Lamp cooldown: ${Math.round(bd.lamp_cooldown_seconds)}s`,
       bd.autofocus_seconds > 0 && `Autofocus: ${Math.round(bd.autofocus_seconds)}s`,
     ].filter(Boolean);
 
     const teardownSeconds = Number(iteration.teardown_overhead_seconds ?? 0);
     const tbd = iteration.teardown_breakdown ?? {};
-    const teardownBreakdownLines = [
-      tbd.readout_seconds > 0 && `Readout: ${Math.round(tbd.readout_seconds)}s`,
-    ].filter(Boolean);
+    const teardownBreakdownLines = [tbd.readout_seconds > 0 && `Readout: ${Math.round(tbd.readout_seconds)}s`].filter(Boolean);
 
-    block.append(makeTraceChips([
-      {
-        label: "Setup",
-        value: formatMinutesSeconds(setupSeconds),
-        className: "chip-input",
-        tooltip: setupBreakdownLines.length > 0 ? setupBreakdownLines.join("\n") : null,
-      },
-      {
-        label: "Teardown",
-        value: formatMinutesSeconds(teardownSeconds),
-        className: "chip-input",
-        tooltip: teardownBreakdownLines.length > 0 ? teardownBreakdownLines.join("\n") : null,
-      },
-      { label: "Batch duration", value: formatMinutesSeconds(iteration.duration_seconds), className: "chip-kept" },
-      { label: "Remaining plans", value: (iteration.remaining_plan_ids_after_iteration ?? []).length, className: "chip-neutral" },
-    ]));
+    const durationSeconds = Number(iteration.duration_seconds ?? 0);
+    const numExposures = Number(iteration.num_exposures ?? 0);
+    const exposureTime = Number(iteration.exposure_time ?? 0);
+    const totalBatchSeconds = setupSeconds + durationSeconds + teardownSeconds;
+
+    const batchDurationLabel = setupSeconds > 0 ? "Batch duration ⏱️" : "Batch duration";
+    const tooltipElement = document.createElement("div");
+    tooltipElement.className = "trace-tooltip";
+
+    // Header + indented breakdown lines, using real DOM so headers can be bold.
+    const setupHeader = document.createElement("strong");
+    setupHeader.textContent = `Setup (${formatMinutesSeconds(setupSeconds)})`;
+    tooltipElement.append(setupHeader, document.createElement("br"));
+    for (const line of setupBreakdownLines) {
+      const indented = document.createElement("div");
+      indented.className = "trace-tooltip-indented";
+      indented.style.paddingLeft = "0.85rem";
+      indented.textContent = line;
+      tooltipElement.append(indented);
+    }
+
+    tooltipElement.append(document.createElement("br"));
+
+    const opHeader = document.createElement("strong");
+    opHeader.textContent = `Operation (${formatMinutesSeconds(durationSeconds)})`;
+    tooltipElement.append(opHeader, document.createElement("br"));
+    const exposureLine = document.createElement("div");
+    exposureLine.className = "trace-tooltip-indented";
+    exposureLine.style.paddingLeft = "0.85rem";
+    exposureLine.textContent = `Exposure: ${numExposures} x ${Math.round(exposureTime)}s`;
+    tooltipElement.append(exposureLine);
+
+    const exposureDurationLine = document.createElement("div");
+    exposureDurationLine.className = "trace-tooltip-indented";
+    exposureDurationLine.style.paddingLeft = "0.85rem";
+    exposureDurationLine.textContent = `Exposure duration: ${formatMinutesSeconds(durationSeconds)}`;
+    tooltipElement.append(exposureDurationLine);
+
+    tooltipElement.append(document.createElement("br"));
+
+    const teardownHeader = document.createElement("strong");
+    teardownHeader.textContent = `Teardown (${formatMinutesSeconds(teardownSeconds)})`;
+    tooltipElement.append(teardownHeader, document.createElement("br"));
+    for (const line of teardownBreakdownLines) {
+      const indented = document.createElement("div");
+      indented.className = "trace-tooltip-indented";
+      indented.style.paddingLeft = "0.85rem";
+      indented.textContent = line;
+      tooltipElement.append(indented);
+    }
+
+    block.append(
+      makeTraceChips([
+        {
+          label: batchDurationLabel,
+          value: formatMinutesSeconds(totalBatchSeconds),
+          className: "chip-kept",
+          tooltipElement,
+        },
+        {
+          label: "Remaining plans",
+          value: (iteration.remaining_plan_ids_after_iteration ?? []).length,
+          className: "chip-neutral",
+        },
+      ]),
+    );
     block.append(renderImmediateTrace(iteration.immediate_trace ?? {}));
     wrapper.append(block);
   }
