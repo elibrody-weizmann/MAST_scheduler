@@ -216,6 +216,13 @@ Returns the list of valid preset names. The browser UI fetches this on load to
 populate the preset dropdown — preset names are defined once in `models.py` and
 served here rather than hardcoded in HTML.
 
+### `GET /scheduler/constraints`
+
+Returns the full constraint registry: all 7 scheduling constraint stage IDs, human labels,
+descriptions, and per-constraint scenario lists. The browser UI fetches this on load to
+populate the **Constraint Suites** panel. Scenario data is defined once in
+`constraint_registry.py` and served here — add new scenarios there, not in HTML or JS.
+
 ### `GET /scheduler/status`
 
 Returns `healthy`, `version`, and the active `SchedulerConfig`.
@@ -256,10 +263,27 @@ Use Docker-based workflows for runtime and validation operations in this reposit
 
 | Suite | What it tests |
 |-------|--------------|
-| `test_filters.py` | All 7 PlanFilter methods |
+| `test_filters.py` | All 7 PlanFilter constraint stages — comprehensive scenarios including boundary conditions, environment overrides, and twilight variants |
+| `test_completeness.py` | Enforces that every stage in `ALL_CONSTRAINT_STAGES` has a corresponding class in `COVERED_CONSTRAINTS` |
 | `test_builder.py` | Priority ranking, exposure negotiation, calibration merging, unit allocation, condition score |
 | `test_overhead.py` | `_compute_setup_overhead` for all inter-batch transitions |
 | `test_integration.py` | Immediate and predictive modes end-to-end; overhead visible in predicted schedule; API endpoints |
+
+### Constraint completeness
+
+`filters.py` exports `ALL_CONSTRAINT_STAGES: frozenset[str]` — the authoritative set of
+constraint stage IDs that the filter chain can apply. `test_filters.py` exports
+`COVERED_CONSTRAINTS: frozenset[str]` — the set of stages that have a test class.
+`test_completeness.py` asserts `ALL_CONSTRAINT_STAGES == COVERED_CONSTRAINTS`.
+
+When adding a new constraint:
+1. Add a new filter method to `PlanFilter` in `filters.py`.
+2. Add the new stage ID to `ALL_CONSTRAINT_STAGES` in `filters.py`.
+3. Add a `ConstraintSpec` entry to `CONSTRAINT_REGISTRY` in `constraint_registry.py`
+   (scenarios appear in the UI automatically via `GET /scheduler/constraints`).
+4. Add a `@pytest.mark.constraint_suite(TRACE_STAGE_*)` class in `test_filters.py`
+   and add the stage ID to `COVERED_CONSTRAINTS`.
+5. The completeness test passes; the UI renders the new suite on next page load.
 
 ## Design references
 

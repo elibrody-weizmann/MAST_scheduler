@@ -7,11 +7,13 @@ from astropy.coordinates import EarthLocation
 from common.models.plans import Plan
 from fastapi import APIRouter, HTTPException, Request
 
+from ..constraint_registry import CONSTRAINT_REGISTRY
 from ..mock_plans import generate_mock_plans
 from ..models import (
     KNOWN_SITE_LABELS,
     KNOWN_SITES,
     MOCK_PRESETS,
+    ConstraintSuitesResponse,
     ImmediateBatch,
     ImmediateRequest,
     ImmediateResponse,
@@ -260,6 +262,11 @@ def generate_mock(req: MockPlanGenerateRequest) -> MockPlanGenerateResponse:
         return generate_mock_plans(req)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/constraints", response_model=ConstraintSuitesResponse)
+def get_constraint_suites() -> ConstraintSuitesResponse:
+    return ConstraintSuitesResponse(constraints=CONSTRAINT_REGISTRY)
 
 
 @router.get("/status", response_model=StatusResponse)

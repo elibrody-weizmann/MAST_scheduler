@@ -29,6 +29,18 @@ from .trace import (
 if TYPE_CHECKING:
     pass
 
+ALL_CONSTRAINT_STAGES: frozenset[str] = frozenset(
+    {
+        TRACE_STAGE_ASTRONOMICAL_NIGHT,
+        TRACE_STAGE_TIME_WINDOW,
+        TRACE_STAGE_AIRMASS,
+        TRACE_STAGE_MOON_PHASE,
+        TRACE_STAGE_MOON_SEPARATION,
+        TRACE_STAGE_QUORUM,
+        TRACE_STAGE_REPEATS,
+    }
+)
+
 _TWILIGHT_HORIZONS: dict[str, u.Quantity] = {
     "astronomical": -18 * u.deg,
     "nautical": -12 * u.deg,

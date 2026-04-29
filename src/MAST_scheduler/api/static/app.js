@@ -1,6 +1,7 @@
 const API_PATHS = {
   status: "/scheduler/status",
   sites: "/scheduler/sites",
+  constraints: "/scheduler/constraints",
   immediate: "/scheduler/immediate",
   immediateInline: "/scheduler/immediate/inline",
   predict: "/scheduler/predict",
@@ -1037,4 +1038,57 @@ fetch(API_PATHS.sites)
       if (key === "ns") opt.selected = true;
       sel.appendChild(opt);
     });
+  });
+
+function renderConstraintSuites(constraints) {
+  const container = document.querySelector("#constraint-suites-list");
+  if (!constraints || constraints.length === 0) {
+    container.textContent = "No constraint suites registered.";
+    return;
+  }
+  container.classList.remove("empty-state");
+  container.innerHTML = "";
+  const grid = document.createElement("div");
+  grid.className = "constraint-suites-grid";
+  constraints.forEach((c) => {
+    const item = document.createElement("details");
+    item.className = "constraint-suite-item";
+    const summary = document.createElement("summary");
+    summary.className = "constraint-suite-summary";
+    const totalCount = c.scenarios.length;
+    summary.innerHTML = `
+      <span class="constraint-suite-label">${c.label}</span>
+      <span class="constraint-suite-meta">
+        <span class="badge badge-allowed">Passing ${totalCount}</span>
+      </span>`;
+    item.appendChild(summary);
+    const desc = document.createElement("p");
+    desc.className = "constraint-suite-description";
+    desc.textContent = c.description;
+    item.appendChild(desc);
+    const list = document.createElement("ul");
+    list.className = "scenario-list";
+    c.scenarios.forEach((s) => {
+      const li = document.createElement("li");
+      li.className = "scenario-item";
+      const outcomeClass = s.expected === "pass" ? "badge-allowed" : "badge-filtered";
+      const outcomeLabel = s.expected === "pass" ? "allowed" : "filtered";
+      li.innerHTML = `
+        <span class="scenario-name">${s.name}</span>
+        <span class="badge ${outcomeClass}">${outcomeLabel}</span>
+        <span class="scenario-description">${s.description}</span>`;
+      list.appendChild(li);
+    });
+    item.appendChild(list);
+    grid.appendChild(item);
+  });
+  container.appendChild(grid);
+}
+
+fetch(API_PATHS.constraints)
+  .then((r) => r.json())
+  .then((data) => renderConstraintSuites(data.constraints))
+  .catch(() => {
+    const container = document.querySelector("#constraint-suites-list");
+    container.textContent = "Failed to load constraint suites.";
   });

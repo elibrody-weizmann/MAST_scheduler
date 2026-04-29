@@ -52,6 +52,9 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "constraint_suite: marks a test class as the comprehensive suite for a named constraint stage (stage_id arg)",
+]
 
 [dependency-groups]
 dev = [

@@ -4,9 +4,10 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator
 
+from .constraint_registry import ConstraintSpec, ScenarioSpec
 from .trace import ImmediateScheduleTrace, PredictedScheduleTrace, SetupBreakdown, TeardownBreakdown
 
-__all__ = ["SetupBreakdown", "TeardownBreakdown"]
+__all__ = ["ConstraintSpec", "ScenarioSpec", "SetupBreakdown", "TeardownBreakdown"]
 
 
 class PredictedBatch(BaseModel):
@@ -179,6 +180,10 @@ class PredictResponse(BaseModel):
     night_end: datetime | None
     environment: EnvironmentConditions | None = None
     trace: PredictedScheduleTrace | None = None
+
+
+class ConstraintSuitesResponse(BaseModel):
+    constraints: list[ConstraintSpec]
 
 
 class StatusResponse(BaseModel):

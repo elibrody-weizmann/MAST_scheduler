@@ -1,5 +1,32 @@
 # Decisions
 
+## [2026-04-29] Constraint completeness registry and UI surface
+
+**Why:** Filter constraint tests were scattered across `test_filters.py` without systematic
+coverage of all edge cases, and there was no mechanism to detect when a new constraint
+was added without a corresponding test suite. There was also no UI visibility into which
+constraints existed or what scenarios had been considered.
+
+**What:** Introduced a three-part completeness system:
+- `filters.py` exports `ALL_CONSTRAINT_STAGES: frozenset[str]` — the authoritative list of
+  constraint stage IDs in the filter chain.
+- `constraint_registry.py` (production code) defines `ScenarioSpec`/`ConstraintSpec` models
+  and `CONSTRAINT_REGISTRY` — per-constraint scenario metadata (name, description, expected
+  outcome) for all 7 constraints. Exposed via `GET /scheduler/constraints`.
+- `test_filters.py` exports `COVERED_CONSTRAINTS: frozenset[str]` and uses one
+  `@pytest.mark.constraint_suite` class per constraint with comprehensive test scenarios.
+- `test_completeness.py` asserts `ALL_CONSTRAINT_STAGES == COVERED_CONSTRAINTS`; fails CI
+  when a new constraint lacks a suite.
+- The browser UI fetches `/scheduler/constraints` on load and renders the **Constraint Suites**
+  panel with expandable accordion items and pass/fail badges per scenario.
+
+**Implications:** Adding a new constraint requires updating `ALL_CONSTRAINT_STAGES` (causes
+completeness test to fail), `CONSTRAINT_REGISTRY`, and `COVERED_CONSTRAINTS`. Scenario
+metadata is defined once in `constraint_registry.py` and flows to both tests (by convention)
+and the UI (via API). Do not hardcode constraint names or scenario lists in HTML or JS.
+
+---
+
 ## [2026-04-29] Model unit-side Acquire+Guide in startup overhead
 
 **Why:** Startup estimation previously treated `timeout_to_guiding` as an opaque plan timeout and did not expose a concrete unit-side “Acquire+Guide” component in setup breakdowns. This made predicted startup timing less representative of real unit behavior and hid a crucial contributor in UI/trace outputs.
