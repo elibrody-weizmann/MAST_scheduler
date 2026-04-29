@@ -163,7 +163,10 @@ class TestUnitAllocation:
         surviving_plan_id = batch.plans[0].ulid
         dropped_plan_id = build_trace.dropped_by_unit_exclusivity[0].plan_id
         assert {surviving_plan_id, dropped_plan_id} == {first.ulid, second.ulid}
-        assert build_trace.dropped_by_unit_exclusivity[0].rationales[0].code == "unit_capacity_exhausted"
+        assert (
+            build_trace.dropped_by_unit_exclusivity[0].rationales[0].code
+            == "unit_capacity_exhausted"
+        )
 
 
 class TestEdgeCases:

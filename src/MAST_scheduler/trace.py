@@ -122,6 +122,14 @@ class ImmediateScheduleTrace(BaseModel):
     simulated_time: datetime | None = None
 
 
+class PlanRepeatStatus(BaseModel):
+    plan_id: str
+    repeat_mode: str
+    quota: int | None  # None = unlimited (as_much_as_posible)
+    completed: int
+    exhausted: bool
+
+
 class PredictedIterationTrace(BaseModel):
     iteration: int
     batch_start: datetime
@@ -135,9 +143,11 @@ class PredictedIterationTrace(BaseModel):
     exposure_time: float = 0.0
     immediate_trace: ImmediateScheduleTrace
     remaining_plan_ids_after_iteration: list[str] = Field(default_factory=list)
+    repeat_status: list[PlanRepeatStatus] = Field(default_factory=list)
 
 
 class PredictedScheduleTrace(BaseModel):
     iterations: list[PredictedIterationTrace] = Field(default_factory=list)
     night_start: datetime | None = None
     night_end: datetime | None = None
+    final_repeat_summary: list[PlanRepeatStatus] = Field(default_factory=list)

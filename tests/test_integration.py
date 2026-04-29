@@ -868,3 +868,159 @@ class TestAPI:
             expected_end = night_start + timedelta(hours=i + 1)
             assert it.batch_start == expected_start
             assert it.batch_end == expected_end
+
+
+class TestRepeatObservability:
+    """Verify per-plan repeat status is tracked and surfaced in prediction traces."""
+
+    NIGHT_START = datetime(2026, 4, 27, 19, 0, tzinfo=UTC)
+    NIGHT_END = datetime(2026, 4, 28, 6, 0, tzinfo=UTC)
+
+    def _make_obs(self) -> MagicMock:
+        obs = MagicMock(spec=Observer)
+        obs.is_night.return_value = True
+        obs.moon_illumination.return_value = 0.05
+        moon_altaz = MagicMock()
+        moon_altaz.alt = MagicMock()
+        moon_altaz.az = MagicMock()
+        moon_altaz.frame = MagicMock()
+        obs.moon_altaz.return_value = moon_altaz
+        obs.tonight.return_value = (
+            MagicMock(to_datetime=lambda timezone: self.NIGHT_START),
+            MagicMock(to_datetime=lambda timezone: self.NIGHT_END),
+        )
+        return obs
+
+    def _run_predict(self, plans, operational_units=None):
+        scheduler = Scheduler(config=SchedulerConfig())
+        obs = self._make_obs()
+        if operational_units is None:
+            operational_units = ["mast01", "mast02"]
+        with patch("MAST_scheduler.filters._plan_skycoord") as mock_coord:
+            target = MagicMock()
+            target.transform_to.return_value = MagicMock(alt=MagicMock(deg=50.0))
+            target.separation.return_value = MagicMock(deg=90.0)
+            mock_coord.return_value = target
+            with (
+                patch("MAST_scheduler.builder._plan_skycoord", return_value=target),
+                patch("MAST_scheduler.builder.Observer", return_value=obs),
+                patch("MAST_scheduler.filters.Observer", return_value=obs),
+                patch("MAST_scheduler.scheduler.Observer", return_value=obs),
+            ):
+                return scheduler.make_predicted_batches_with_trace(
+                    plans,
+                    site=WIS_LOCATION,
+                    start_datetime=self.NIGHT_START,
+                    operational_units=operational_units,
+                )
+
+    def test_repeat_status_present_in_iteration_trace(self):
+        """Each predicted iteration trace must include a repeat_status list."""
+        plan = load_plan("minimal")  # once_per_night
+        _, trace = self._run_predict([plan])
+        assert len(trace.iterations) > 0
+        for it in trace.iterations:
+            assert hasattr(it, "repeat_status")
+            assert isinstance(it.repeat_status, list)
+
+    def test_repeat_status_exhausted_after_completion(self):
+        """After a once_per_night plan is used, its repeat_status entry shows exhausted=True."""
+        plan = load_plan("minimal")  # once_per_night, quota=1
+        _, trace = self._run_predict([plan])
+        # Find the first iteration that produced a batch (num_exposures > 0)
+        batch_iterations = [it for it in trace.iterations if it.num_exposures > 0]
+        assert len(batch_iterations) > 0
+        # The iteration after usage should show exhausted
+        last_batch_it = batch_iterations[-1]
+        status_entries = [s for s in last_batch_it.repeat_status if s.plan_id == plan.ulid]
+        assert len(status_entries) == 1
+        assert status_entries[0].exhausted is True
+        assert status_entries[0].completed == 1
+        assert status_entries[0].quota == 1
+
+    def test_quota_none_for_unlimited_repeat(self):
+        """Plans with as_much_as_possible repeat mode report quota=None and exhausted=False."""
+        from copy import deepcopy
+
+        from common.models.constraints import WhenToRepeat
+
+        plan = deepcopy(load_plan("minimal"))
+        plan.target.repeats.every = WhenToRepeat.as_much_as_posible
+        _, trace = self._run_predict([plan])
+        batch_iterations = [it for it in trace.iterations if it.num_exposures > 0]
+        assert len(batch_iterations) > 0
+        first_batch_it = batch_iterations[0]
+        status_entries = [s for s in first_batch_it.repeat_status if s.plan_id == plan.ulid]
+        assert len(status_entries) == 1
+        assert status_entries[0].quota is None
+        assert status_entries[0].exhausted is False
+
+    def test_final_repeat_summary_populated(self):
+        """PredictedScheduleTrace.final_repeat_summary is populated after the prediction run."""
+        plan = load_plan("minimal")
+        _, trace = self._run_predict([plan])
+        assert hasattr(trace, "final_repeat_summary")
+        assert len(trace.final_repeat_summary) > 0
+        assert trace.final_repeat_summary[0].plan_id == plan.ulid
+
+    def test_none_ulid_plan_removed_after_use(self):
+        """A plan with ulid=None must not persist in remaining_plan_ids after being used."""
+        from copy import deepcopy
+
+        plan = deepcopy(load_plan("minimal"))
+        plan.ulid = None
+        _, trace = self._run_predict([plan])
+        batch_iterations = [it for it in trace.iterations if it.num_exposures > 0]
+        if batch_iterations:
+            # After the first batch iteration, the None-ULID plan must not be in remaining
+            after_first_batch = batch_iterations[0]
+            assert "" not in after_first_batch.remaining_plan_ids_after_iteration
+
+    def test_feasible_plan_count_reflects_filter_output(self):
+        """feasible_plan_count should equal the count of plans that passed all filters,
+        not just those in the winning batch group."""
+        from copy import deepcopy
+
+        from starlette.testclient import TestClient
+
+        from MAST_scheduler.api.app import app
+
+        plan_a = load_plan("minimal")
+        plan_b = deepcopy(load_plan("airmass"))
+        # Force plan_b to fail the night filter by setting is_night to False only for it
+        # Use a simpler approach: use quorum to block one plan
+        obs = self._make_obs()
+
+        with patch("MAST_scheduler.filters._plan_skycoord") as mock_coord:
+            target = MagicMock()
+            target.transform_to.return_value = MagicMock(alt=MagicMock(deg=50.0))
+            target.separation.return_value = MagicMock(deg=90.0)
+            mock_coord.return_value = target
+            with (
+                patch("MAST_scheduler.filters.Observer", return_value=obs),
+                patch("MAST_scheduler.scheduler.Observer", return_value=obs),
+                TestClient(app) as client,
+            ):
+                response = client.post(
+                    "/scheduler/immediate/inline",
+                    json={
+                        "plans": [
+                            plan_a.model_dump(mode="json"),
+                            plan_b.model_dump(mode="json"),
+                        ],
+                        "operational_units": ["mast01", "mast02"],
+                        "site_name": "ns",
+                        "now": NOW_NIGHT.isoformat(),
+                        "include_trace": True,
+                    },
+                )
+
+        assert response.status_code == 200
+        data = response.json()
+        # Both plans use deepspec and pass all filters → feasible_plan_count should reflect
+        # the count from the last filter stage, not just the batch size
+        trace = data.get("trace") or {}
+        filter_stages = trace.get("filter_stages", [])
+        if filter_stages:
+            last_stage_kept = len(filter_stages[-1]["kept_plan_ids"])
+            assert data["feasible_plan_count"] == last_stage_kept

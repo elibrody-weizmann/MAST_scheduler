@@ -16,10 +16,11 @@ from .builder import (
     _compute_teardown,
 )
 from .config import SchedulerConfig
-from .filters import PlanFilter
+from .filters import _REPEAT_QUOTAS, PlanFilter
 from .models import EnvironmentConditions, PredictedBatch, SetupBreakdown, TeardownBreakdown
 from .trace import (
     ImmediateScheduleTrace,
+    PlanRepeatStatus,
     PlanTraceSummary,
     PredictedIterationTrace,
     PredictedScheduleTrace,
@@ -147,6 +148,7 @@ class Scheduler:
                         exposure_time=0.0,
                         immediate_trace=immediate_trace,
                         remaining_plan_ids_after_iteration=[_plan_id(plan) for plan in remaining],
+                        repeat_status=_build_repeat_status(remaining, completed_tonight),
                     )
                 )
                 current_time = next_time
@@ -178,7 +180,10 @@ class Scheduler:
 
             used_ids = set(pb.plan_ids)
             remaining = [
-                p for p in remaining if p.ulid not in used_ids or _can_repeat(p, completed_tonight)
+                p
+                for p in remaining
+                if p.ulid is not None
+                and (p.ulid not in used_ids or _can_repeat(p, completed_tonight))
             ]
             iteration += 1
             trace.iterations.append(
@@ -195,11 +200,13 @@ class Scheduler:
                     exposure_time=batch.exposure_duration,
                     immediate_trace=immediate_trace,
                     remaining_plan_ids_after_iteration=[_plan_id(plan) for plan in remaining],
+                    repeat_status=_build_repeat_status(pending_plans, completed_tonight),
                 )
             )
 
             current_time = batch_end
 
+        trace.final_repeat_summary = _build_repeat_status(pending_plans, completed_tonight)
         return results, trace
 
     def make_predicted_batches(
@@ -278,20 +285,36 @@ def _advance(dt: datetime, seconds: float) -> datetime:
 
 
 def _can_repeat(plan: Plan, completed: dict[str, int]) -> bool:
+    from common.models.constraints import WhenToRepeat
+
+    every = plan.target.repeats.every if plan.target.repeats else WhenToRepeat.only_once
+    quota = _REPEAT_QUOTAS.get(every, 1)
+    done = completed.get(plan.ulid or "", 0)
+    return done < quota
+
+
+def _build_repeat_status(plans: list[Plan], completed: dict[str, int]) -> list[PlanRepeatStatus]:
     import math
 
     from common.models.constraints import WhenToRepeat
 
-    quotas = {
-        WhenToRepeat.only_once: 1,
-        WhenToRepeat.once_per_night: 1,
-        WhenToRepeat.twice_per_night: 2,
-        WhenToRepeat.as_much_as_posible: math.inf,
-    }
-    every = plan.target.repeats.every if plan.target.repeats else WhenToRepeat.only_once
-    quota = quotas.get(every, 1)
-    done = completed.get(plan.ulid or "", 0)
-    return done < quota
+    statuses = []
+    for plan in plans:
+        every = plan.target.repeats.every if plan.target.repeats else WhenToRepeat.only_once
+        raw_quota = _REPEAT_QUOTAS.get(every, 1)
+        quota: int | None = None if raw_quota == math.inf else int(raw_quota)
+        done = completed.get(plan.ulid or "", 0)
+        exhausted = False if quota is None else done >= quota
+        statuses.append(
+            PlanRepeatStatus(
+                plan_id=plan.ulid or "",
+                repeat_mode=str(every),
+                quota=quota,
+                completed=done,
+                exhausted=exhausted,
+            )
+        )
+    return statuses
 
 
 def _to_predicted_batch(

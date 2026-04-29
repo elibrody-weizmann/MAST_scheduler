@@ -121,6 +121,9 @@ Returns the next batch to run right now.
 ```
 
 Response includes an `ImmediateBatch` object (typed Pydantic model: `ulid`, `instrument`, `disperser`, `exposure_time`, `num_exposures`, `allocated_units`, plus raw `BatchData` fields), `feasible_plan_count`, and echoed `environment`.
+
+`feasible_plan_count` is the number of plans that survived every filter stage (not just those that ended up in the winning instrument group). The UI displays this as "Plans passed filters".
+
 Within a single immediate batch, unit assignments are exclusive: the same operational unit is never assigned to more than one plan in that batch.
 
 ### `POST /scheduler/immediate/inline`
@@ -147,6 +150,12 @@ Simulates the night and returns an ordered list of `PredictedBatch` objects with
 - `setup_overhead_seconds` / `setup_breakdown` — inter-batch transition cost (spectrograph switch, grating move, lamp warmup/cooldown, autofocus) with per-component breakdown
 - `teardown_overhead_seconds` / `teardown_breakdown` — post-batch readout time
 - `lamp_on`, `calibration_filter` — calibration context for the batch
+
+The optional `trace` response (`include_trace: true` on inline endpoints) includes per-iteration repeat observability:
+- `iterations[].repeat_status` — list of `PlanRepeatStatus` snapshots (one per input plan) taken after each iteration. Fields: `plan_id`, `repeat_mode`, `quota` (`null` = unlimited), `completed`, `exhausted`.
+- `final_repeat_summary` — same structure, taken at end-of-night across all input plans.
+
+**Plans remaining behavior:** `remaining_plan_ids_after_iteration` reflects plans that still have quota remaining and a non-`None` ULID. Plans with `as_much_as_possible` repeat mode remain in "remaining" permanently (`exhausted` will always be `false` for them). Partial completions are counted the same as full ones — a single completion counter increments once per batch.
 
 `start_datetime` resolution:
 - **Within the current ongoing night** — simulation begins at the exact timestamp given (mid-night resume).

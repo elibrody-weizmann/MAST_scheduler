@@ -1,5 +1,20 @@
 # Decisions
 
+## [2026-04-29] Repeat observability: per-plan quota tracking and plans-remaining fix
+
+**Why:** The prediction UI showed a "Remaining plans" count that did not decrement correctly. Three root causes: (1) plans with `ulid=None` were never evicted from `remaining` because `None not in set_of_strings` is always `True`; (2) `feasible_plan_count` in immediate responses counted only plans in the winning instrument group, not all plans that passed the filter chain; (3) no structured observability existed for per-plan repeat state (quota, completions, exhaustion).
+
+**What:** Three fixes and one new model:
+- `PlanRepeatStatus` trace model added to `trace.py` (fields: `plan_id`, `repeat_mode`, `quota: int | None`, `completed`, `exhausted`). `quota=None` denotes unlimited (`as_much_as_posible`).
+- `PredictedIterationTrace` now carries `repeat_status: list[PlanRepeatStatus]` — a snapshot of all input plans' repeat state taken after each batch.
+- `PredictedScheduleTrace` now carries `final_repeat_summary: list[PlanRepeatStatus]` — end-of-night summary across all input plans.
+- `_REPEAT_QUOTAS` is no longer duplicated; `scheduler.py` imports from `filters.py`.
+- The `None`-ULID guard (`if p.ulid is not None`) ensures plans without an identity are unconditionally dropped from `remaining` after first use.
+- `feasible_plan_count` now reflects `filter_stages[-1].kept_plan_ids` length, i.e., all plans that survived every filter stage.
+- UI: each prediction iteration card gains an "Exhausted N/M" chip and a collapsible repeat quota table. The "Feasible plans" label is renamed "Plans passed filters".
+
+**Implications:** Operators can now see exactly which plans are exhausted and which have quota remaining. The "Remaining plans" count is reliable. Plans with `ulid=None` are treated as non-repeatable and exit `remaining` after first use. Partial completions remain indistinguishable from full ones (a single counter increments once per batch regardless of execution depth — this is a known limitation).
+
 ## [2026-04-29] Enforce exclusive operational unit assignment per immediate batch
 
 **Why:** Immediate batch construction treated quorum as a per-plan feasibility check and then assigned units independently per plan, which allowed multiple plans in the same batch to reuse the same operational unit. That made some emitted batches physically infeasible under a unit-exclusivity execution model.

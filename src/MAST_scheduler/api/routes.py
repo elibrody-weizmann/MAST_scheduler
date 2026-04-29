@@ -124,9 +124,10 @@ def _build_immediate_response(
     scheduler: Scheduler,
 ) -> ImmediateResponse:
     if batch is None:
+        feasible_count = len(trace.filter_stages[-1].kept_plan_ids) if trace.filter_stages else 0
         return ImmediateResponse(
             batch=None,
-            feasible_plan_count=0,
+            feasible_plan_count=feasible_count,
             message="No feasible plans",
             environment=environment,
             trace=trace if include_trace else None,
@@ -145,7 +146,9 @@ def _build_immediate_response(
     )
     return ImmediateResponse(
         batch=ImmediateBatch(**serialized),
-        feasible_plan_count=len(batch.plans),
+        feasible_plan_count=(
+            len(trace.filter_stages[-1].kept_plan_ids) if trace.filter_stages else len(batch.plans)
+        ),
         environment=environment,
         trace=trace if include_trace else None,
         simulated=trace.simulated,

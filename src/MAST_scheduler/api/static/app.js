@@ -296,7 +296,7 @@ function makeBatchCardBreakdown(parts) {
  *   allocated_units, plan_ids, too_count, contains_too
  *
  * opts:
- *   feasibleCount  — if set, show a "Feasible plans" row
+ *   feasibleCount  — if set, show a "Plans passed filters" row
  *   footerChips    — array of {label, value} rendered as chips in a footer bar
  */
 function renderBatchCard(batch, opts = {}) {
@@ -389,7 +389,7 @@ function renderBatchCard(batch, opts = {}) {
 
   // Feasible count (optional)
   if (opts.feasibleCount != null) {
-    rows.append(makeBatchCardRow("Feasible plans", opts.feasibleCount));
+    rows.append(makeBatchCardRow("Plans passed filters", opts.feasibleCount));
   }
 
   card.append(rows);
@@ -935,6 +935,37 @@ function renderImmediateTrace(trace) {
   return section;
 }
 
+function renderRepeatStatusTable(repeatStatus) {
+  const details = document.createElement("details");
+  details.className = "repeat-status-details";
+  const summary = document.createElement("summary");
+  summary.textContent = "Repeat quota status";
+  details.append(summary);
+  const table = document.createElement("table");
+  table.className = "repeat-status-table";
+  const thead = table.createTHead();
+  const headRow = thead.insertRow();
+  for (const col of ["Plan ID", "Mode", "Completed", "Quota", "Status"]) {
+    const th = document.createElement("th");
+    th.textContent = col;
+    headRow.append(th);
+  }
+  const tbody = table.createTBody();
+  for (const s of repeatStatus) {
+    const row = tbody.insertRow();
+    if (s.exhausted) row.className = "repeat-exhausted";
+    const shortId = s.plan_id ? s.plan_id.slice(-8) : "—";
+    const quota = s.quota === null ? "∞" : String(s.quota);
+    const status = s.exhausted ? "Exhausted" : "Active";
+    for (const val of [shortId, s.repeat_mode, String(s.completed), quota, status]) {
+      const td = row.insertCell();
+      td.textContent = val;
+    }
+  }
+  details.append(table);
+  return details;
+}
+
 function renderPredictedTrace(trace) {
   const wrapper = document.createElement("section");
   wrapper.className = "trace-section";
@@ -945,6 +976,18 @@ function renderPredictedTrace(trace) {
     wrapper.append(empty);
     return wrapper;
   }
+  const finalSummary = trace.final_repeat_summary ?? [];
+  if (finalSummary.length > 0) {
+    const summaryBlock = document.createElement("div");
+    summaryBlock.className = "repeat-final-summary";
+    const heading = document.createElement("h3");
+    heading.textContent = "End-of-night repeat summary";
+    summaryBlock.append(heading);
+    summaryBlock.append(renderRepeatStatusTable(finalSummary));
+    summaryBlock.querySelector("details").open = true;
+    wrapper.append(summaryBlock);
+  }
+
   for (const iteration of trace.iterations ?? []) {
     const immediateTrace = iteration.immediate_trace ?? {};
     const finalPlans = Array.isArray(immediateTrace.final_plans) ? immediateTrace.final_plans : [];
@@ -993,6 +1036,9 @@ function renderPredictedTrace(trace) {
       contains_too: containsToo,
     };
     const remainingCount = (iteration.remaining_plan_ids_after_iteration ?? []).length;
+    const repeatStatus = iteration.repeat_status ?? [];
+    const trackedPlans = repeatStatus.filter(s => s.quota !== null);
+    const exhaustedCount = trackedPlans.filter(s => s.exhausted).length;
     const totalBatchSeconds =
       Number(iteration.setup_overhead_seconds ?? 0) +
       Number(iteration.duration_seconds ?? 0) +
@@ -1002,9 +1048,17 @@ function renderPredictedTrace(trace) {
         footerChips: [
           { label: "Batch duration", value: formatMinutesSeconds(totalBatchSeconds), className: "chip-kept" },
           { label: "Remaining plans", value: remainingCount, className: "chip-neutral" },
+          {
+            label: "Exhausted",
+            value: `${exhaustedCount}/${trackedPlans.length}`,
+            className: exhaustedCount > 0 ? "chip-dropped" : "chip-kept",
+          },
         ],
       }),
     );
+    if (repeatStatus.length > 0) {
+      block.append(renderRepeatStatusTable(repeatStatus));
+    }
     block.append(renderImmediateTrace(iteration.immediate_trace ?? {}));
     wrapper.append(block);
   }
