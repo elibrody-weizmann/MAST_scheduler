@@ -24,6 +24,17 @@ class TestMockPlanGenerator:
         validated = [Plan.model_validate(item) for item in response.plans]
         assert len(validated) == 6
 
+    def test_long_exposure_preset_stays_within_plan_limits(self):
+        req = MockPlanGenerateRequest(
+            count=50,
+            seed=12,
+            preset="long-exposure",
+            include_constraints=True,
+        )
+        response = generate_mock_plans(req)
+        validated = [Plan.model_validate(item) for item in response.plans]
+        assert len(validated) == 50
+
     def test_rejects_invalid_count(self):
         req = MockPlanGenerateRequest(count=1)
         req.count = 0

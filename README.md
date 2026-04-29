@@ -90,7 +90,7 @@ The FastAPI app serves a dependency-free web interface at `/`. It lets operators
 - Run immediate/predictive scheduling against either file-path plans or inline generated plans
 - Run the immediate scheduler and inspect the selected batch; if it is currently daytime the scheduler automatically advances to astronomical dusk and marks the result as **Simulated**
 - Predict the night for any future date (simulation starts at that night's dusk) or resume mid-night from the exact timestamp given
-- Inspect stage-by-stage trace details with grouped keep/drop rationales, including full plan objects for the final selected batch
+- Inspect stage-by-stage trace details with grouped keep/drop rationales, drill-down chips for affected plans, and highlighted exceeded constraints (actual vs limit) for supported rationale codes
 - View per-iteration batch duration (setup + exposure + teardown) in the trace timeline; hover over the Batch duration chip to see per-component breakdowns in seconds
 - Copy JSON from all raw JSON panels, including the generated plans list
 
@@ -209,6 +209,9 @@ constraint toggles (`include_time_windows`, `include_moon_constraints`,
 pool for targeted scheduler stress scenarios. ToO plans never receive a time
 window constraint. Plans with `autofocus: true` add `autofocus_time` (180 s
 by default) to their batch's predicted duration.
+Generated `target.requested_exposure_duration` and `target.max_exposure_duration`
+are always capped to `<= 3600` seconds so inline plan payloads remain valid for
+`common.models.plans.Plan` validation, including `long-exposure` preset output.
 
 ### `GET /scheduler/mock-plans/presets`
 

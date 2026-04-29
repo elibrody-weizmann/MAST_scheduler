@@ -1,5 +1,21 @@
 # Decisions
 
+## [2026-04-29] Cap generated mock exposure durations to Plan schema limits
+
+**Why:** The `long-exposure` mock preset could emit `requested_exposure_duration` and `max_exposure_duration` values above `3600`, which broke inline scheduling payload validation against `common.models.plans.Plan`.
+
+**What:** Mock plan generation now caps both requested and max exposure durations to `3600` seconds (the Plan field upper bound), regardless of request/preset exposure ranges. Added a regression test that validates generated `long-exposure` plans through `Plan.model_validate(...)`.
+
+**Implications:** Mock-plan API callers can safely pass generated plans to inline scheduler endpoints without duration-limit validation failures. The `long-exposure` preset still biases toward longer exposures, but generated values stay within schema-valid bounds.
+
+## [2026-04-29] Trace rationale drill-down chips for grouped constraints
+
+**Why:** Grouped rationale cards in the trace details panel summarized counts but did not let operators inspect which plans were affected or quickly see which measured value exceeded a scheduling constraint. That slowed root-cause analysis when many plans were filtered in the same stage.
+
+**What:** Kept rationale grouping frontend-derived in `app.js` and extended each group with a drill-down control. The drill-down now shows affected `plan_id` chips and, for supported rationale codes (`airmass_exceeded`, `moon_phase_exceeded`, `moon_separation_too_small`, `exposure_cap_exceeded`), renders an explicit actual-vs-limit exceedance badge using trace `rationale.values`.
+
+**Implications:** No API schema changes were required; the UI relies on existing `DroppedPlanTrace.rationales[].values`. New rationale codes continue to render safely without exceedance badges until an explicit frontend mapping is added.
+
 ## [2026-04-29] Unified batch card UI component
 
 **Why:** Immediate Batch, Night Prediction, and Trace iterations each rendered batch information in different ad-hoc ways — a key-value summary list, loose `<span>` chips, and timing chips with tooltip. There was no shared visual language and the Immediate Batch response was missing fields (lamp, cal filter, plan IDs, setup/teardown overhead) that Prediction already exposed.

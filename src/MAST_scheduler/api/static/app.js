@@ -343,12 +343,12 @@ function renderBatchCard(batch, opts = {}) {
     rows.append(makeBatchCardRow("Setup overhead", formatMinutesSeconds(setupSeconds)));
     const bd = batch.setup_breakdown ?? {};
     const breakdownParts = [
-      bd.spectrograph_switch_seconds > 0 && `spectrograph ${formatMinutesSeconds(bd.spectrograph_switch_seconds)}`,
+      bd.autofocus_seconds > 0 && `autofocus ${formatMinutesSeconds(bd.autofocus_seconds)}`,
+      bd.acquire_and_guide_seconds > 0 && `Acquire+Guide ${formatMinutesSeconds(bd.acquire_and_guide_seconds)}`,
+      bd.spectrograph_switch_seconds > 0 && `Stage Positioning ${formatMinutesSeconds(bd.spectrograph_switch_seconds)}`,
       bd.grating_move_seconds > 0 && `grating ${formatMinutesSeconds(bd.grating_move_seconds)}`,
       bd.lamp_warmup_seconds > 0 && `lamp warmup ${formatMinutesSeconds(bd.lamp_warmup_seconds)}`,
       bd.lamp_cooldown_seconds > 0 && `lamp cooldown ${formatMinutesSeconds(bd.lamp_cooldown_seconds)}`,
-      bd.autofocus_seconds > 0 && `autofocus ${formatMinutesSeconds(bd.autofocus_seconds)}`,
-      bd.acquire_and_guide_seconds > 0 && `Acquire+Guide ${formatMinutesSeconds(bd.acquire_and_guide_seconds)}`,
     ].filter(Boolean);
     if (breakdownParts.length > 0) {
       rows.append(makeBatchCardBreakdown(breakdownParts));
@@ -526,6 +526,66 @@ function resetTrace() {
   elements.traceDetails.textContent = "Click a trace item to inspect rationale details.";
 }
 
+const CONSTRAINT_EXCEEDANCE_BY_CODE = {
+  airmass_exceeded: {
+    actualKey: "airmass",
+    limitKey: "max_airmass",
+    actualLabel: "Airmass",
+    limitLabel: "Max",
+    comparator: ">",
+  },
+  moon_phase_exceeded: {
+    actualKey: "illumination_pct",
+    limitKey: "max_phase_pct",
+    actualLabel: "Illumination (%)",
+    limitLabel: "Max (%)",
+    comparator: ">",
+  },
+  moon_separation_too_small: {
+    actualKey: "separation_deg",
+    limitKey: "min_distance_deg",
+    actualLabel: "Separation (deg)",
+    limitLabel: "Min (deg)",
+    comparator: "<",
+  },
+  exposure_cap_exceeded: {
+    actualKey: "negotiated_exposure_seconds",
+    limitKey: "max_exposure_seconds",
+    actualLabel: "Exposure (s)",
+    limitLabel: "Max (s)",
+    comparator: ">",
+  },
+};
+
+function formatConstraintValue(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Number(value.toFixed(2)).toString();
+  }
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+  return String(value);
+}
+
+function extractConstraintExceedance(code, values) {
+  const mapping = CONSTRAINT_EXCEEDANCE_BY_CODE[code];
+  if (!mapping || !values || typeof values !== "object") {
+    return null;
+  }
+  const actualValue = values[mapping.actualKey];
+  const limitValue = values[mapping.limitKey];
+  if (actualValue === undefined || limitValue === undefined) {
+    return null;
+  }
+  return {
+    actualLabel: mapping.actualLabel,
+    actualValue: formatConstraintValue(actualValue),
+    limitLabel: mapping.limitLabel,
+    limitValue: formatConstraintValue(limitValue),
+    comparator: mapping.comparator,
+  };
+}
+
 function summarizeRationaleGroups(entries) {
   const grouped = {};
   for (const entry of entries) {
@@ -537,17 +597,23 @@ function summarizeRationaleGroups(entries) {
         message: entry.message,
         count: 0,
         planIds: new Set(),
+        exceedances: [],
       };
     }
     grouped[key].count += 1;
     for (const planId of entry.planIds) {
       grouped[key].planIds.add(planId);
     }
+    const exceedance = extractConstraintExceedance(entry.code, entry.values);
+    if (exceedance) {
+      grouped[key].exceedances.push(exceedance);
+    }
   }
   return Object.values(grouped)
     .map((group) => ({
       ...group,
       planIds: Array.from(group.planIds),
+      exceedances: group.exceedances.slice(0, 3),
     }))
     .sort((a, b) => b.planIds.length - a.planIds.length || b.count - a.count);
 }
@@ -578,6 +644,7 @@ function collectRationaleEntries(payload) {
           code: "dropped_without_rationale",
           message: "Dropped without explicit rationale",
           planIds: [planId],
+          values: null,
         });
         continue;
       }
@@ -587,11 +654,74 @@ function collectRationaleEntries(payload) {
           code: rationale?.code ?? "unknown",
           message: rationale?.message ?? "No message",
           planIds: planId ? [planId] : [],
+          values: rationale?.values ?? null,
         });
       }
     }
   }
   return entries;
+}
+
+function buildConstraintExceedanceChip(exceedance) {
+  const chip = document.createElement("div");
+  chip.className = "constraint-exceedance";
+
+  const actual = document.createElement("span");
+  actual.className = "constraint-value is-exceeded";
+  actual.textContent = `${exceedance.actualLabel}: ${exceedance.actualValue}`;
+
+  const comparator = document.createElement("span");
+  comparator.className = "constraint-comparator";
+  comparator.textContent = exceedance.comparator;
+
+  const limit = document.createElement("span");
+  limit.className = "constraint-value";
+  limit.textContent = `${exceedance.limitLabel}: ${exceedance.limitValue}`;
+
+  chip.append(actual, comparator, limit);
+  return chip;
+}
+
+function buildRationaleDrillDown(group) {
+  const drill = document.createElement("details");
+  drill.className = "rationale-drilldown";
+
+  const summary = document.createElement("summary");
+  summary.className = "rationale-drilldown-chip";
+  summary.textContent = "Drill down";
+  drill.append(summary);
+
+  const body = document.createElement("div");
+  body.className = "rationale-drilldown-body";
+
+  if (group.exceedances.length > 0) {
+    const constraintHeading = document.createElement("p");
+    constraintHeading.className = "rationale-drilldown-heading";
+    constraintHeading.textContent = "Exceeded constraint";
+    body.append(constraintHeading);
+
+    for (const exceedance of group.exceedances) {
+      body.append(buildConstraintExceedanceChip(exceedance));
+    }
+  }
+
+  const plansHeading = document.createElement("p");
+  plansHeading.className = "rationale-drilldown-heading";
+  plansHeading.textContent = "Plans affected";
+  body.append(plansHeading);
+
+  const plans = document.createElement("div");
+  plans.className = "rationale-plan-list";
+  for (const planId of group.planIds) {
+    const planChip = document.createElement("span");
+    planChip.className = "rationale-plan-chip";
+    planChip.textContent = planId;
+    plans.append(planChip);
+  }
+  body.append(plans);
+
+  drill.append(body);
+  return drill;
 }
 
 function buildRationalePanel(payload) {
@@ -620,7 +750,7 @@ function buildRationalePanel(payload) {
     const meta = document.createElement("p");
     meta.className = "rationale-meta";
     meta.textContent = `Plans: ${group.planIds.length} | Occurrences: ${group.count}`;
-    item.append(title, message, meta);
+    item.append(title, message, meta, buildRationaleDrillDown(group));
     panel.append(item);
   }
 
@@ -840,9 +970,11 @@ function renderPredictedTrace(trace) {
 
     // Build a batch-shaped object from iteration fields for renderBatchCard.
     const build = immediateTrace.build ?? {};
+    const winningGroupId = immediateTrace.priority?.winning_group_id ?? build.selected_group_id ?? null;
+    const winningGroup = (immediateTrace.grouping?.groups ?? []).find((g) => g.group_id === winningGroupId) ?? null;
     const iterBatch = {
-      instrument: build.instrument ?? null,
-      disperser: build.disperser ?? null,
+      instrument: winningGroup?.instrument ?? null,
+      disperser: winningGroup?.disperser ?? null,
       predicted_start: iteration.batch_start,
       predicted_end: iteration.batch_end,
       predicted_duration_seconds: iteration.duration_seconds,

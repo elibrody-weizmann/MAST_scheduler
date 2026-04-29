@@ -25,6 +25,7 @@ ULID_LENGTH = 26
 DEFAULT_OWNER = "mock-generator"
 TIME_WINDOW_HOURS = 4
 MAX_ALLOCATED_UNITS = 3
+MAX_PLAN_EXPOSURE_DURATION_SECONDS = 3600.0
 HIGHSPEC_DISPERSERS = ("Ca", "Mg", "Halpha")
 CALIBRATION_FILTERS = ("ND1000", "ND2000", "ND4000")
 REPEAT_MODES = (
@@ -155,11 +156,17 @@ def _build_plan(
     preset: dict[str, float],
 ) -> dict:
     instrument = _pick_instrument(req, rng, preset)
-    exposure_range = preset.get("exposure_range_seconds", req.exposure_range_seconds)
+    exposure_range = _effective_exposure_range(
+        preset.get("exposure_range_seconds", req.exposure_range_seconds)
+    )
     num_exposures_range = preset.get("num_exposures_range", req.num_exposures_range)
     requested_exposure = rng.uniform(*exposure_range)
     max_exposure_multiplier = 1.0 + rng.uniform(0.0, 2.0)
-    max_exposure = min(exposure_range[1], requested_exposure * max_exposure_multiplier)
+    max_exposure = min(
+        MAX_PLAN_EXPOSURE_DURATION_SECONDS,
+        exposure_range[1],
+        requested_exposure * max_exposure_multiplier,
+    )
     repeats = _pick_repeat(req, rng)
     too_probability = max(req.too_fraction, preset["too_probability"])
     is_too = rng.random() < too_probability
@@ -280,6 +287,13 @@ def _build_constraints(
 
 def _random_ulid(rng: random.Random) -> str:
     return "".join(rng.choice(ULID_ALPHABET) for _ in range(ULID_LENGTH))
+
+
+def _effective_exposure_range(exposure_range: tuple[float, float]) -> tuple[float, float]:
+    minimum, maximum = exposure_range
+    capped_minimum = min(minimum, MAX_PLAN_EXPOSURE_DURATION_SECONDS)
+    capped_maximum = min(maximum, MAX_PLAN_EXPOSURE_DURATION_SECONDS)
+    return (capped_minimum, max(capped_minimum, capped_maximum))
 
 
 def _format_ra_hours(hours: float) -> str:
