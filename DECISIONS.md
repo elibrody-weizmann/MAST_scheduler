@@ -1,5 +1,22 @@
 # Decisions
 
+## [2026-04-30] Closest moon separation is passed as render input
+
+**Why:** Operators need the minimum target-moon separation over a full observation window,
+but the existing sky-plot endpoint intentionally returns `image/png` and avoids adding
+frontend-specific response contracts. Post-processing rendered PNG bytes to add labels would
+split plotting logic and make annotation behavior harder to test and maintain.
+
+**What:** Added a dedicated moon-separation computation path that produces a compact
+annotation object (target name, minimum separation, sample offset, and target/moon
+coordinates at that sample). The API route computes this data once and passes it into the
+central `generate_sky_plot(...)` renderer, which draws both the visual connector and numeric
+label during normal figure construction.
+
+**Implications:** The `/scheduler/sky-plot` contract remains `image/png` with no client
+payload changes. Annotation logic stays centralized in the plotting mechanism and can be
+validated with focused backend tests.
+
 ## [2026-04-30] Observation-window validation for time-varying filter constraints
 
 **Why:** `_evaluate_airmass` and `_evaluate_moon_separation` previously checked constraints at a single point in time (`now`). In the prediction simulation `now` is the end of the previous batch, but the actual observation starts at `now + setup_overhead`. A target barely above the minimum altitude at `now` may have set by `predicted_start`; a plan valid at observation start may violate airmass or moon-separation constraints before it finishes. Such plans were admitted silently and would fail during execution.

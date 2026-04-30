@@ -213,8 +213,10 @@ Returns `image/png` directly.
 The plot uses a dark polar projection (azimuth on θ, 0° = N, clockwise; altitude on r,
 90° at centre). Each target in `plans` is plotted at its computed alt/az. Targets below
 the horizon are shown dimmed at the horizon ring. The moon is rendered as a hollow circle
-with its illumination percentage annotated nearby. Cardinal labels and 30°/60° altitude
-circles are included.
+with its illumination percentage annotated nearby. When `selected_plan_ids` and
+`batch_duration_seconds` are provided, the renderer computes the closest moon separation
+across the observation window and annotates that minimum as both a highlighted connector and
+a numeric label. Cardinal labels and 30°/60° altitude circles are included.
 
 The UI automatically fetches this endpoint for each batch card when using inline plans
 (generated mock plans), injecting a 140×140 px thumbnail below the batch details.

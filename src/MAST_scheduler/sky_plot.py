@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import math
+from dataclasses import dataclass
 
 import astropy.units as u
 import matplotlib
@@ -18,10 +19,89 @@ _ACCENT = "#38bdf8"
 _SELECTED_COLOR = "#f472b6"
 _SELECTED_BELOW_COLOR = "#f97316"  # orange: scheduled but below horizon at plot time
 _MOON_COLOR = "#fbbf24"
+_MOON_SEPARATION_COLOR = "#94a3b8"
 _BELOW_COLOR = "#475569"
 _TEXT = "#e5e7eb"
 _DIM_ALPHA = 0.25
 _ARC_STEPS = 20
+_MOON_SEPARATION_SAMPLE_COUNT = 25
+
+
+@dataclass(frozen=True)
+class MoonSeparationAnnotation:
+    target_name: str
+    separation_deg: float
+    offset_seconds: float
+    target_alt_deg: float
+    target_az_deg: float
+    moon_alt_deg: float
+    moon_az_deg: float
+
+
+def build_moon_separation_annotation(
+    targets: list[tuple[str, float, float, str | None]],
+    site: EarthLocation,
+    start_time: Time,
+    *,
+    selected_plan_ids: set[str] | None = None,
+    batch_duration_seconds: float | None = None,
+    fixed_moon_alt_deg: float | None = None,
+    fixed_moon_az_deg: float | None = None,
+) -> MoonSeparationAnnotation | None:
+    candidate_targets = [
+        (name, ra_deg, dec_deg)
+        for name, ra_deg, dec_deg, plan_id in targets
+        if selected_plan_ids is None or not selected_plan_ids or plan_id in selected_plan_ids
+    ]
+    if not candidate_targets:
+        candidate_targets = [(name, ra_deg, dec_deg) for name, ra_deg, dec_deg, _ in targets]
+    if not candidate_targets:
+        return None
+
+    duration_seconds = max(0.0, float(batch_duration_seconds or 0.0))
+    offsets = _observation_offsets(duration_seconds, _MOON_SEPARATION_SAMPLE_COUNT)
+    start_frame = AltAz(obstime=start_time, location=site)
+    fixed_moon_coord = None
+    if fixed_moon_alt_deg is not None and fixed_moon_az_deg is not None:
+        fixed_moon_coord = SkyCoord(
+            alt=fixed_moon_alt_deg * u.deg,
+            az=fixed_moon_az_deg * u.deg,
+            frame=start_frame,
+        )
+
+    best: MoonSeparationAnnotation | None = None
+    for offset_seconds in offsets:
+        sample_time = start_time + TimeDelta(offset_seconds * u.s)
+        sample_frame = AltAz(obstime=sample_time, location=site)
+        moon_coord = fixed_moon_coord
+        if moon_coord is None:
+            moon_coord = get_body("moon", sample_time, location=site).transform_to(sample_frame)
+        moon_alt_deg = float(moon_coord.alt.deg)
+        moon_az_deg = float(moon_coord.az.deg)
+
+        for name, ra_deg, dec_deg in candidate_targets:
+            target_coord = SkyCoord(ra=ra_deg * u.deg, dec=dec_deg * u.deg, frame="icrs")
+            target_altaz = target_coord.transform_to(sample_frame)
+            separation_deg = float(target_altaz.separation(moon_coord).deg)
+            candidate = MoonSeparationAnnotation(
+                target_name=name,
+                separation_deg=separation_deg,
+                offset_seconds=offset_seconds,
+                target_alt_deg=float(target_altaz.alt.deg),
+                target_az_deg=float(target_altaz.az.deg),
+                moon_alt_deg=moon_alt_deg,
+                moon_az_deg=moon_az_deg,
+            )
+            if best is None or candidate.separation_deg < best.separation_deg:
+                best = candidate
+    return best
+
+
+def _observation_offsets(duration_seconds: float, sample_count: int) -> list[float]:
+    if duration_seconds <= 0:
+        return [0.0]
+    clamped_samples = max(2, sample_count)
+    return np.linspace(0.0, duration_seconds, clamped_samples).tolist()
 
 
 def generate_sky_plot(
@@ -34,6 +114,7 @@ def generate_sky_plot(
     *,
     selected_plan_ids: set[str] | None = None,
     batch_duration_seconds: float | None = None,
+    moon_separation_annotation: MoonSeparationAnnotation | None = None,
     size_px: int = 1200,
 ) -> bytes:
     dpi = 100
@@ -135,12 +216,51 @@ def generate_sky_plot(
             bbox={"boxstyle": "round,pad=0.2", "facecolor": _BG, "edgecolor": "none", "alpha": 0.4},
         )
 
-    def _draw_arc(az_start: float, r_start: float, az_end: float, r_end: float, color: str) -> None:
+    def _draw_connector(
+        az_a: float,
+        r_a: float,
+        az_b: float,
+        r_b: float,
+        color: str,
+        *,
+        linewidth: float = 1.0,
+        alpha: float = 0.55,
+    ) -> None:
+        # Two-point chord in polar space — renders as a straight line across the plot.
+        ax.plot(
+            [az_a, az_b],
+            [r_a, r_b],
+            color=color,
+            linewidth=linewidth,
+            linestyle="-",
+            alpha=alpha,
+            zorder=3,
+        )
+
+    def _draw_arc(
+        az_start: float,
+        r_start: float,
+        az_end: float,
+        r_end: float,
+        color: str,
+        *,
+        linewidth: float = 1.2,
+        linestyle: str = "--",
+        alpha: float = 0.5,
+    ) -> None:
         # Use shortest angular path to avoid wrapping through nearly 360° when crossing 0/2π.
         delta = (az_end - az_start + math.pi) % (2 * math.pi) - math.pi
         azs = np.linspace(az_start, az_start + delta, _ARC_STEPS)
         rs = np.linspace(r_start, r_end, _ARC_STEPS)
-        ax.plot(azs, rs, color=color, linewidth=1.2, linestyle="--", alpha=0.5, zorder=3)
+        ax.plot(
+            azs,
+            rs,
+            color=color,
+            linewidth=linewidth,
+            linestyle=linestyle,
+            alpha=alpha,
+            zorder=3,
+        )
 
     # Resolve all target positions then draw non-selected first, selected on top.
     frame = AltAz(obstime=time, location=site)
@@ -183,6 +303,57 @@ def generate_sky_plot(
     for name, az_rad, r, color, is_selected in resolved:
         if is_selected:
             _plot_target(name, az_rad, r, color, is_selected, alpha=1.0)
+
+    if moon_separation_annotation is not None:
+        ann_target_az = math.radians(moon_separation_annotation.target_az_deg)
+        ann_target_r = _altaz_r(moon_separation_annotation.target_alt_deg)
+        ann_moon_az = math.radians(moon_separation_annotation.moon_az_deg)
+        ann_moon_r = _altaz_r(moon_separation_annotation.moon_alt_deg)
+        _draw_connector(
+            ann_target_az,
+            ann_target_r,
+            ann_moon_az,
+            ann_moon_r,
+            _MOON_SEPARATION_COLOR,
+        )
+        ax.scatter(
+            ann_target_az,
+            ann_target_r,
+            s=42,
+            marker="o",
+            facecolors=_BG,
+            edgecolors=_MOON_SEPARATION_COLOR,
+            linewidths=1.0,
+            zorder=8,
+            alpha=0.9,
+        )
+        ax.scatter(
+            ann_moon_az,
+            ann_moon_r,
+            s=42,
+            marker="o",
+            facecolors=_BG,
+            edgecolors=_MOON_SEPARATION_COLOR,
+            linewidths=1.0,
+            zorder=8,
+            alpha=0.9,
+        )
+        offset_label = _format_offset_label(moon_separation_annotation.offset_seconds)
+        ax.text(
+            0.98,
+            0.98,
+            (
+                f"Closest Moon sep: {moon_separation_annotation.separation_deg:.1f}\N{DEGREE SIGN}"
+                f" ({moon_separation_annotation.target_name}, {offset_label})"
+            ),
+            transform=ax.transAxes,
+            ha="right",
+            va="top",
+            color=_MOON_SEPARATION_COLOR,
+            fontsize=9,
+            fontweight="semibold",
+            bbox={"boxstyle": "round,pad=0.2", "facecolor": _BG, "edgecolor": _GRID, "alpha": 0.65},
+        )
 
     # Legend
     has_selected_below = any(
@@ -303,3 +474,9 @@ def generate_sky_plot(
     plt.close(fig)
     buf.seek(0)
     return buf.read()
+
+
+def _format_offset_label(offset_seconds: float) -> str:
+    if offset_seconds < 60:
+        return f"+{offset_seconds:.0f}s"
+    return f"+{offset_seconds / 60.0:.0f}m"

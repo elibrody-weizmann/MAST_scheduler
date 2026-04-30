@@ -13,6 +13,7 @@ from starlette.testclient import TestClient
 from MAST_scheduler.api.app import app
 from MAST_scheduler.api.routes import _compute_moon
 from MAST_scheduler.models import KNOWN_SITES
+from MAST_scheduler.sky_plot import build_moon_separation_annotation
 
 
 def _site(name: str) -> EarthLocation:
@@ -147,3 +148,100 @@ class TestSkyPlotEndpointMoonInjection:
         assert img_early != img_late, (
             "Sky plot images should differ when the simulated time differs (moon moved)"
         )
+
+
+class TestMoonSeparationAnnotation:
+    def test_returns_none_for_empty_targets(self):
+        annotation = build_moon_separation_annotation([], _site("ns"), _NS_NIGHT)
+        assert annotation is None
+
+    def test_zero_duration_has_zero_offset(self):
+        targets = [("Target A", 204.25, -29.87, "plan-a")]
+        annotation = build_moon_separation_annotation(
+            targets,
+            _site("ns"),
+            _NS_NIGHT,
+            selected_plan_ids={"plan-a"},
+            batch_duration_seconds=0.0,
+            fixed_moon_alt_deg=45.0,
+            fixed_moon_az_deg=180.0,
+        )
+        assert annotation is not None
+        assert annotation.offset_seconds == 0.0
+        assert annotation.target_name == "Target A"
+        assert 0.0 <= annotation.separation_deg <= 180.0
+
+    def test_prefers_selected_target_subset(self):
+        targets = [
+            ("Target A", 204.25, -29.87, "plan-a"),
+            ("Target B", 120.0, 20.0, "plan-b"),
+        ]
+        annotation = build_moon_separation_annotation(
+            targets,
+            _site("ns"),
+            _NS_NIGHT,
+            selected_plan_ids={"plan-b"},
+            batch_duration_seconds=1800.0,
+            fixed_moon_alt_deg=40.0,
+            fixed_moon_az_deg=210.0,
+        )
+        assert annotation is not None
+        assert annotation.target_name == "Target B"
+
+    def test_falls_back_to_all_targets_when_no_selected_ids(self):
+        targets = [("Target A", 204.25, -29.87, "plan-a")]
+        annotation = build_moon_separation_annotation(
+            targets,
+            _site("ns"),
+            _NS_NIGHT,
+            selected_plan_ids=set(),
+            batch_duration_seconds=300.0,
+            fixed_moon_alt_deg=20.0,
+            fixed_moon_az_deg=90.0,
+        )
+        assert annotation is not None
+        assert annotation.target_name == "Target A"
+
+    def test_samples_observation_window(self):
+        targets = [("Target A", 204.25, -29.87, "plan-a")]
+        annotation = build_moon_separation_annotation(
+            targets,
+            _site("ns"),
+            _NS_NIGHT,
+            selected_plan_ids={"plan-a"},
+            batch_duration_seconds=3600.0,
+            fixed_moon_alt_deg=40.0,
+            fixed_moon_az_deg=210.0,
+        )
+        assert annotation is not None
+        assert 0.0 <= annotation.offset_seconds <= 3600.0
+
+
+class TestSkyPlotEndpointMoonSeparation:
+    def test_sky_plot_selected_with_duration_returns_png(self):
+        payload = {
+            "plans": [
+                {
+                    "ulid": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+                    "target": {
+                        "name": "Target A",
+                        "ra_hours": 13.6167,
+                        "dec_degrees": -29.87,
+                    },
+                }
+            ],
+            "site_name": "ns",
+            "time": "2026-04-29T21:00:00",
+            "environment": {
+                "moon_alt_deg": 45.0,
+                "moon_az_deg": 180.0,
+                "moon_illumination_pct": 75.0,
+            },
+            "selected_plan_ids": ["01ARZ3NDEKTSV4RRFFQ69G5FAV"],
+            "batch_duration_seconds": 1800.0,
+        }
+        with TestClient(app) as client:
+            resp = client.post("/scheduler/sky-plot", json=payload)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        assert resp.content[:4] == b"\x89PNG"

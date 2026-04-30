@@ -32,7 +32,7 @@ from ..models import (
     StatusResponse,
 )
 from ..scheduler import Scheduler
-from ..sky_plot import generate_sky_plot
+from ..sky_plot import build_moon_separation_annotation, generate_sky_plot
 from ..trace import ImmediateScheduleTrace, RejectedPlanSummary
 
 logger = logging.getLogger(__name__)
@@ -386,6 +386,21 @@ def sky_plot(req: SkyPlotRequest) -> FastAPIResponse:
     if moon_illum is None:
         moon_illum = computed_illum
 
+    selected_plan_ids = set(req.selected_plan_ids)
+    moon_separation_annotation = None
+    try:
+        moon_separation_annotation = build_moon_separation_annotation(
+            targets,
+            site,
+            time,
+            selected_plan_ids=selected_plan_ids,
+            batch_duration_seconds=req.batch_duration_seconds,
+            fixed_moon_alt_deg=env.moon_alt_deg if env else None,
+            fixed_moon_az_deg=env.moon_az_deg if env else None,
+        )
+    except Exception:
+        logger.warning("moon separation annotation failed", exc_info=True)
+
     try:
         png = generate_sky_plot(
             targets,
@@ -394,8 +409,9 @@ def sky_plot(req: SkyPlotRequest) -> FastAPIResponse:
             moon_alt,
             moon_az,
             moon_illum,
-            selected_plan_ids=set(req.selected_plan_ids),
+            selected_plan_ids=selected_plan_ids,
             batch_duration_seconds=req.batch_duration_seconds,
+            moon_separation_annotation=moon_separation_annotation,
         )
     except Exception as exc:
         logger.exception("sky-plot generation failed: %s", exc)
