@@ -135,8 +135,9 @@ def generate_sky_plot(
         )
 
     def _draw_arc(az_start: float, r_start: float, az_end: float, r_end: float, color: str) -> None:
-        # Interpolate in (az, r) space over _ARC_STEPS points for a smooth polar arc.
-        azs = np.linspace(az_start, az_end, _ARC_STEPS)
+        # Use shortest angular path to avoid wrapping through nearly 360° when crossing 0/2π.
+        delta = (az_end - az_start + math.pi) % (2 * math.pi) - math.pi
+        azs = np.linspace(az_start, az_start + delta, _ARC_STEPS)
         rs = np.linspace(r_start, r_end, _ARC_STEPS)
         ax.plot(azs, rs, color=color, linewidth=1.2, linestyle="--", alpha=0.5, zorder=3)
 
