@@ -259,12 +259,6 @@ class PlanFilter:
         return True, []
 
     def _evaluate_airmass(self, plan: Plan) -> tuple[bool, list[TraceRationale]]:
-        if (
-            plan.constraints is None
-            or plan.constraints.airmass is None
-            or plan.constraints.airmass.max is None
-        ):
-            return True, []
         altaz_frame = AltAz(obstime=self._astropy_time, location=self._site)
         coord = _plan_skycoord(plan)
         alt = coord.transform_to(altaz_frame).alt.deg
@@ -276,6 +270,12 @@ class PlanFilter:
                     values={"altitude_deg": float(alt)},
                 )
             ]
+        if (
+            plan.constraints is None
+            or plan.constraints.airmass is None
+            or plan.constraints.airmass.max is None
+        ):
+            return True, []
         airmass = 1.0 / math.sin(math.radians(alt))
         max_airmass = float(plan.constraints.airmass.max)
         if airmass > max_airmass:

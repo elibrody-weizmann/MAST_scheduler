@@ -210,8 +210,16 @@ def _alt_mock(alt_deg: float):
 class TestAirmass:
     def test_no_constraint_passes(self):
         plan = load_plan("minimal")
-        result = make_filter([plan]).airmass().plans
+        with patch("MAST_scheduler.filters._plan_skycoord", return_value=_alt_mock(45.0)):
+            result = make_filter([plan]).airmass().plans
         assert len(result) == 1
+
+    def test_no_constraint_below_horizon_fails(self):
+        """Plans without airmass constraints must still be rejected when below the horizon."""
+        plan = load_plan("minimal")
+        with patch("MAST_scheduler.filters._plan_skycoord", return_value=_alt_mock(-5.0)):
+            result = make_filter([plan]).airmass().plans
+        assert result == []
 
     def test_below_max_passes(self):
         """alt=45° → airmass≈1.41, below max=1.5."""
@@ -316,7 +324,10 @@ def _moon_sep_mocks(separation_deg: float) -> tuple[MagicMock, MagicMock]:
     """Return (observer, target_coord_mock) for moon separation tests."""
     obs = MagicMock(spec=Observer)
     obs.moon_altaz.return_value = MagicMock()
+    mock_altaz = MagicMock()
+    mock_altaz.alt.deg = 45.0
     target = MagicMock()
+    target.transform_to.return_value = mock_altaz
     target.separation.return_value = MagicMock(deg=separation_deg)
     return obs, target
 

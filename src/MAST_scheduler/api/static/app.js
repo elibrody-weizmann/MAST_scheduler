@@ -96,7 +96,7 @@ function _getLightbox() {
   return _lightbox;
 }
 
-async function _attachSkyPlot(card, plans, siteName, time, environment, selectedPlanIds = []) {
+async function _attachSkyPlot(card, plans, siteName, time, environment, selectedPlanIds = [], batchDurationSeconds = null) {
   try {
     const resp = await fetch(API_PATHS.skyPlot, {
       method: "POST",
@@ -107,6 +107,7 @@ async function _attachSkyPlot(card, plans, siteName, time, environment, selected
         time,
         environment: environment ?? null,
         selected_plan_ids: selectedPlanIds,
+        batch_duration_seconds: batchDurationSeconds,
       }),
     });
     if (!resp.ok) {
@@ -640,7 +641,11 @@ function renderImmediate(data) {
     const { plans, siteName, environment, defaultTime } = state.skyPlotBase;
     const batchTime = batch.start_time ?? batch.predicted_start ?? defaultTime ?? null;
     if (batchTime) {
-      _attachSkyPlot(batchCard, plans, siteName, batchTime, environment, batch.plan_ids ?? []);
+      const totalDuration =
+        Number(batch.setup_overhead_seconds ?? 0) +
+        Number(batch.predicted_duration_seconds ?? 0) +
+        Number(batch.teardown_overhead_seconds ?? 0) || null;
+      _attachSkyPlot(batchCard, plans, siteName, batchTime, environment, batch.plan_ids ?? [], totalDuration);
     }
   }
 }
@@ -665,7 +670,11 @@ function renderPrediction(data) {
       const { plans, siteName, environment } = state.skyPlotBase;
       const batchTime = batch.predicted_start ?? null;
       if (batchTime) {
-        _attachSkyPlot(card, plans, siteName, batchTime, environment, batch.plan_ids ?? []);
+        const totalDuration =
+          Number(batch.setup_overhead_seconds ?? 0) +
+          Number(batch.predicted_duration_seconds ?? batch.duration_seconds ?? 0) +
+          Number(batch.teardown_overhead_seconds ?? 0) || null;
+        _attachSkyPlot(card, plans, siteName, batchTime, environment, batch.plan_ids ?? [], totalDuration);
       }
     }
   }

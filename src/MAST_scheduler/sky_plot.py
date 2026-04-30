@@ -7,8 +7,8 @@ import astropy.units as u
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from astropy.coordinates import AltAz, EarthLocation, SkyCoord
-from astropy.time import Time
+from astropy.coordinates import AltAz, EarthLocation, SkyCoord, get_body
+from astropy.time import Time, TimeDelta
 
 matplotlib.use("Agg")
 
@@ -19,6 +19,8 @@ _SELECTED_COLOR = "#f472b6"
 _MOON_COLOR = "#fbbf24"
 _BELOW_COLOR = "#475569"
 _TEXT = "#e5e7eb"
+_DIM_ALPHA = 0.25
+_ARC_STEPS = 20
 
 
 def generate_sky_plot(
@@ -30,6 +32,7 @@ def generate_sky_plot(
     moon_illumination_pct: float | None,
     *,
     selected_plan_ids: set[str] | None = None,
+    batch_duration_seconds: float | None = None,
     size_px: int = 1200,
 ) -> bytes:
     dpi = 100
@@ -77,12 +80,22 @@ def generate_sky_plot(
     ax.set_xticklabels([])
 
     selected = selected_plan_ids or set()
+    end_time = (
+        time + TimeDelta(batch_duration_seconds * u.s)
+        if batch_duration_seconds is not None and batch_duration_seconds > 0
+        else None
+    )
 
-    def _plot_target(name: str, az_rad: float, r: float, color: str, is_selected: bool) -> None:
+    def _altaz_r(alt_deg: float) -> float:
+        return max(0.0, min(1.0, 1 - alt_deg / 90.0)) if alt_deg >= 0 else 1.0
+
+    def _plot_target(
+        name: str, az_rad: float, r: float, color: str, is_selected: bool, alpha: float = 1.0
+    ) -> None:
         marker = "*" if is_selected else "o"
         size = 160 if is_selected else 80
         zorder = 7 if is_selected else 5
-        ax.scatter(az_rad, r, color=color, s=size, marker=marker, zorder=zorder)
+        ax.scatter(az_rad, r, color=color, s=size, marker=marker, zorder=zorder, alpha=alpha)
         ax.text(
             az_rad,
             r - 0.06,
@@ -93,38 +106,90 @@ def generate_sky_plot(
             fontsize=11,
             fontweight="bold",
             zorder=zorder,
-            bbox={"boxstyle": "round,pad=0.2", "facecolor": _BG, "edgecolor": "none", "alpha": 0.7},
+            alpha=alpha,
+            bbox={
+                "boxstyle": "round,pad=0.2",
+                "facecolor": _BG,
+                "edgecolor": "none",
+                "alpha": 0.7 * alpha,
+            },
         )
+
+    def _plot_ghost(name: str, az_rad: float, r: float, color: str, is_selected: bool) -> None:
+        marker = "*" if is_selected else "o"
+        size = 120 if is_selected else 60
+        zorder = 6 if is_selected else 4
+        ax.scatter(az_rad, r, color=color, s=size, marker=marker, zorder=zorder, alpha=0.35)
+        ax.text(
+            az_rad,
+            r - 0.06,
+            name,
+            ha="center",
+            va="top",
+            color=color,
+            fontsize=9,
+            fontstyle="italic",
+            zorder=zorder,
+            alpha=0.45,
+            bbox={"boxstyle": "round,pad=0.2", "facecolor": _BG, "edgecolor": "none", "alpha": 0.4},
+        )
+
+    def _draw_arc(az_start: float, r_start: float, az_end: float, r_end: float, color: str) -> None:
+        # Interpolate in (az, r) space over _ARC_STEPS points for a smooth polar arc.
+        azs = np.linspace(az_start, az_end, _ARC_STEPS)
+        rs = np.linspace(r_start, r_end, _ARC_STEPS)
+        ax.plot(azs, rs, color=color, linewidth=1.2, linestyle="--", alpha=0.5, zorder=3)
 
     # Resolve all target positions then draw non-selected first, selected on top.
     frame = AltAz(obstime=time, location=site)
+    end_frame = AltAz(obstime=end_time, location=site) if end_time is not None else None
+
     resolved: list[tuple[str, float, float, str, bool]] = []  # name, az_rad, r, color, is_selected
+    resolved_end: dict[str, tuple[float, float]] = {}  # name -> (az_rad_end, r_end)
+
     for name, ra_deg, dec_deg, plan_id in targets:
         coord = SkyCoord(ra=ra_deg * u.deg, dec=dec_deg * u.deg, frame="icrs")
         altaz = coord.transform_to(frame)
         alt = float(altaz.alt.deg)
         az = float(altaz.az.deg)
         is_selected = plan_id is not None and plan_id in selected
-        if alt >= 0:
-            r = 1 - alt / 90.0
-            color = _SELECTED_COLOR if is_selected else _ACCENT
-        else:
-            r = 1.0
-            color = _BELOW_COLOR
+        r = _altaz_r(alt)
+        color = _SELECTED_COLOR if is_selected else (_ACCENT if alt >= 0 else _BELOW_COLOR)
         resolved.append((name, math.radians(az), r, color, is_selected))
 
+        if is_selected and end_frame is not None:
+            altaz_end = coord.transform_to(end_frame)
+            resolved_end[name] = (
+                math.radians(float(altaz_end.az.deg)),
+                _altaz_r(float(altaz_end.alt.deg)),
+            )
+
+    # Draw arcs and ghosts for selected targets before drawing current markers.
     for name, az_rad, r, color, is_selected in resolved:
+        if is_selected and name in resolved_end:
+            az_end, r_end = resolved_end[name]
+            _draw_arc(az_rad, r, az_end, r_end, color)
+            _plot_ghost(name, az_end, r_end, color, is_selected)
+
+    for name, az_rad, r, color, is_selected in resolved:
+        alpha = 1.0 if is_selected else _DIM_ALPHA
         if not is_selected:
-            _plot_target(name, az_rad, r, color, is_selected)
+            _plot_target(name, az_rad, r, color, is_selected, alpha=alpha)
     for name, az_rad, r, color, is_selected in resolved:
         if is_selected:
-            _plot_target(name, az_rad, r, color, is_selected)
+            _plot_target(name, az_rad, r, color, is_selected, alpha=1.0)
 
     # Legend
     legend_items = [
         (plt.scatter([], [], color=_SELECTED_COLOR, s=100, marker="*"), "Scheduled target"),
-        (plt.scatter([], [], color=_ACCENT, s=60, marker="o"), "Candidate (above horizon)"),
-        (plt.scatter([], [], color=_BELOW_COLOR, s=60, marker="o"), "Below horizon"),
+        (
+            plt.scatter([], [], color=_ACCENT, s=60, marker="o", alpha=_DIM_ALPHA),
+            "Candidate (above horizon)",
+        ),
+        (
+            plt.scatter([], [], color=_BELOW_COLOR, s=60, marker="o", alpha=_DIM_ALPHA),
+            "Below horizon",
+        ),
         (
             plt.scatter(
                 [], [], s=120, facecolors="none", edgecolors=_MOON_COLOR, linewidths=1.5, marker="o"
@@ -132,6 +197,13 @@ def generate_sky_plot(
             "Moon",
         ),
     ]
+    if end_time is not None:
+        legend_items.append(
+            (
+                plt.scatter([], [], color=_TEXT, s=60, marker="o", alpha=0.35),
+                "End-of-batch position (ghost)",
+            )
+        )
     handles, labels = zip(*legend_items, strict=True)
     ax.legend(
         handles,
@@ -147,12 +219,35 @@ def generate_sky_plot(
         handletextpad=0.4,
     )
 
-    # Moon
+    # Moon — draw arc/ghost first, then current marker on top.
     if moon_alt_deg is not None and moon_az_deg is not None:
-        moon_r = 1 - moon_alt_deg / 90.0
-        moon_r = max(0.0, min(1.0, moon_r))
+        moon_r = max(0.0, min(1.0, 1 - moon_alt_deg / 90.0))
+        moon_az_rad = math.radians(moon_az_deg)
+
+        if end_time is not None:
+            try:
+                moon_end = get_body("moon", end_time, location=site)
+                moon_end_altaz = moon_end.transform_to(AltAz(obstime=end_time, location=site))
+                moon_end_r = max(0.0, min(1.0, 1 - float(moon_end_altaz.alt.deg) / 90.0))
+                moon_end_az_rad = math.radians(float(moon_end_altaz.az.deg))
+                _draw_arc(moon_az_rad, moon_r, moon_end_az_rad, moon_end_r, _MOON_COLOR)
+                # Ghost moon circle at end position
+                ax.scatter(
+                    moon_end_az_rad,
+                    moon_end_r,
+                    marker="o",
+                    s=300,
+                    facecolors="none",
+                    edgecolors=_MOON_COLOR,
+                    linewidths=1.2,
+                    zorder=4,
+                    alpha=0.35,
+                )
+            except Exception:
+                pass
+
         ax.scatter(
-            math.radians(moon_az_deg),
+            moon_az_rad,
             moon_r,
             marker="o",
             s=400,
@@ -165,7 +260,7 @@ def generate_sky_plot(
             f"{moon_illumination_pct:.0f}%" if moon_illumination_pct is not None else "Moon"
         )
         ax.text(
-            math.radians(moon_az_deg),
+            moon_az_rad,
             moon_r - 0.07,
             illum_label,
             ha="center",

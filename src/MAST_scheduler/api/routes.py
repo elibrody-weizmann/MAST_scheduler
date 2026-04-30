@@ -4,8 +4,6 @@ import logging
 import math
 from datetime import UTC
 
-logger = logging.getLogger(__name__)
-
 import astropy.units as u
 from astropy.coordinates import AltAz, EarthLocation, get_body
 from astropy.time import Time
@@ -36,6 +34,8 @@ from ..models import (
 from ..scheduler import Scheduler
 from ..sky_plot import generate_sky_plot
 from ..trace import ImmediateScheduleTrace, RejectedPlanSummary
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/scheduler")
 
@@ -395,6 +395,7 @@ def sky_plot(req: SkyPlotRequest) -> FastAPIResponse:
             moon_az,
             moon_illum,
             selected_plan_ids=set(req.selected_plan_ids),
+            batch_duration_seconds=req.batch_duration_seconds,
         )
     except Exception as exc:
         logger.exception("sky-plot generation failed: %s", exc)
