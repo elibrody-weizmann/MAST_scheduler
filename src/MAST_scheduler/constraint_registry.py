@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import base64
+import logging
 from typing import Literal
 
+import astropy.units as u
+from astropy.coordinates import EarthLocation
+from astropy.time import Time
 from pydantic import BaseModel
 
+from .sky_plot import generate_sky_plot
 from .trace import (
     TRACE_STAGE_AIRMASS,
     TRACE_STAGE_ASTRONOMICAL_NIGHT,
@@ -14,11 +20,38 @@ from .trace import (
     TRACE_STAGE_TIME_WINDOW,
 )
 
+_log = logging.getLogger(__name__)
+
+# Neot Smadar site — used for scenario sky plot illustrations
+_NS_SITE = EarthLocation(lon=35.027 * u.deg, lat=30.593 * u.deg, height=500.0 * u.m)
+# Reference time well into astronomical night at NS (2026-04-27 01:00 UTC)
+_NIGHT_TIME = Time("2026-04-27T01:00:00", format="isot", scale="utc")
+
+# M83 (NGC 5236): RA 13h 37m, Dec -29.9° — well-placed target from Israel during night
+_TARGET_HIGH = [("M83", 204.25, -29.87)]
+# Ursa Major target at low altitude from Israel
+_TARGET_LOW = [("HD 100029", 172.5, 65.0)]
+
+
+def _make_sky_plot_b64(
+    targets: list[tuple[str, float, float]],
+    moon_alt: float | None = None,
+    moon_az: float | None = None,
+    moon_illum: float | None = None,
+) -> str | None:
+    try:
+        png = generate_sky_plot(targets, _NS_SITE, _NIGHT_TIME, moon_alt, moon_az, moon_illum)
+        return base64.b64encode(png).decode("ascii")
+    except Exception:
+        _log.warning("Failed to generate scenario sky plot", exc_info=True)
+        return None
+
 
 class ScenarioSpec(BaseModel):
     name: str
     description: str
     expected: Literal["pass", "fail"]
+    sky_plot_b64: str | None = None
 
 
 class ConstraintSpec(BaseModel):
@@ -144,6 +177,8 @@ CONSTRAINT_REGISTRY: list[ConstraintSpec] = [
                     "Computed airmass exceeds the plan limit → dropped with code airmass_exceeded."
                 ),
                 expected="fail",
+                # Illustrative: target at low altitude (~20°) from Neot Smadar at night
+                sky_plot_b64=_make_sky_plot_b64([("Target (low alt)", 170.0, -65.0)]),
             ),
             ScenarioSpec(
                 name="at_exact_boundary_passes",
@@ -159,6 +194,8 @@ CONSTRAINT_REGISTRY: list[ConstraintSpec] = [
                     " target_below_horizon before airmass is computed."
                 ),
                 expected="fail",
+                # Illustrative: far southern target below the horizon from Israel
+                sky_plot_b64=_make_sky_plot_b64([("Target (below horizon)", 180.0, -75.0)]),
             ),
             ScenarioSpec(
                 name="at_zenith_passes",
@@ -167,6 +204,8 @@ CONSTRAINT_REGISTRY: list[ConstraintSpec] = [
                     " which passes any reasonable limit."
                 ),
                 expected="pass",
+                # Illustrative: target near zenith from NS at reference time
+                sky_plot_b64=_make_sky_plot_b64(_TARGET_HIGH),
             ),
         ],
     ),
@@ -195,6 +234,9 @@ CONSTRAINT_REGISTRY: list[ConstraintSpec] = [
                     " dropped with code moon_phase_exceeded."
                 ),
                 expected="fail",
+                sky_plot_b64=_make_sky_plot_b64(
+                    _TARGET_HIGH, moon_alt=55.0, moon_az=200.0, moon_illum=92.0
+                ),
             ),
             ScenarioSpec(
                 name="at_boundary_passes",
@@ -237,6 +279,10 @@ CONSTRAINT_REGISTRY: list[ConstraintSpec] = [
                 name="above_min_passes",
                 description="Separation exceeds the minimum — plan passes.",
                 expected="pass",
+                # Illustrative: target well separated from moon (~90° apart)
+                sky_plot_b64=_make_sky_plot_b64(
+                    _TARGET_HIGH, moon_alt=45.0, moon_az=310.0, moon_illum=50.0
+                ),
             ),
             ScenarioSpec(
                 name="below_min_fails",
@@ -244,6 +290,10 @@ CONSTRAINT_REGISTRY: list[ConstraintSpec] = [
                     "Separation is below the minimum → dropped with code moon_separation_too_small."
                 ),
                 expected="fail",
+                # Illustrative: target within ~10° of the moon
+                sky_plot_b64=_make_sky_plot_b64(
+                    [("Target", 204.25, -29.87)], moon_alt=48.0, moon_az=185.0, moon_illum=70.0
+                ),
             ),
             ScenarioSpec(
                 name="at_boundary_passes",

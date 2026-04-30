@@ -192,6 +192,36 @@ instead of `plan_paths`.
 }
 ```
 
+### `POST /scheduler/sky-plot`
+
+Generates a polar altitude-azimuth sky chart for a set of plans at a given site and time.
+Returns `image/png` directly.
+
+```json
+{
+  "plans": [{ "...": "Plan-shaped payload" }],
+  "site_name": "ns",
+  "time": "2026-04-27T01:00:00Z",
+  "environment": {
+    "moon_illumination_pct": 55.0,
+    "moon_alt_deg": 40.0,
+    "moon_az_deg": 210.0
+  }
+}
+```
+
+The plot uses a dark polar projection (azimuth on θ, 0° = N, clockwise; altitude on r,
+90° at centre). Each target in `plans` is plotted at its computed alt/az. Targets below
+the horizon are shown dimmed at the horizon ring. The moon is rendered as a hollow circle
+with its illumination percentage annotated nearby. Cardinal labels and 30°/60° altitude
+circles are included.
+
+The UI automatically fetches this endpoint for each batch card when using inline plans
+(generated mock plans), injecting a 140×140 px thumbnail below the batch details.
+Clicking the thumbnail opens a full-size lightbox (Escape or click to close). The
+`GET /scheduler/constraints` response also includes `sky_plot_b64` on select constraint
+scenarios for direct embedding without a separate fetch.
+
 ### `POST /scheduler/mock-plans/generate`
 
 Generates deterministic mock plans and summary stats for static UI or API clients.

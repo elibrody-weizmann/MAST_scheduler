@@ -438,6 +438,42 @@ textarea {
   padding: 0.5rem 1rem;
 }
 
+.batch-card-plot {
+  border-top: 1px solid var(--border);
+  padding: 0.5rem;
+  text-align: center;
+}
+
+.sky-plot-thumb {
+  border: 1px solid var(--border, #334155);
+  border-radius: 6px;
+  cursor: zoom-in;
+  height: 140px;
+  object-fit: contain;
+  width: 140px;
+}
+
+#sky-plot-lightbox {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.85);
+  cursor: zoom-out;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: fixed;
+  z-index: 1000;
+}
+
+#sky-plot-lightbox[hidden] {
+  display: none;
+}
+
+#sky-plot-lightbox img {
+  border-radius: 8px;
+  max-height: 90vh;
+  max-width: 90vw;
+}
+
 .trace-card {
   margin-top: 1rem;
 }
@@ -871,13 +907,18 @@ textarea {
 
 .scenario-item {
   display: grid;
-  grid-template-columns: auto auto 1fr;
-  align-items: baseline;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
   gap: 0.5rem;
   background: rgb(2 6 23 / 0.4);
   border-radius: 0.4rem;
   padding: 0.4rem 0.6rem;
   font-size: 0.85rem;
+}
+
+.scenario-item .sky-plot-thumb {
+  height: 80px;
+  width: 80px;
 }
 
 .scenario-name {

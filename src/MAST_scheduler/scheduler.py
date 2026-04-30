@@ -111,7 +111,14 @@ class Scheduler:
         observer = Observer(location=site)
         t0 = Time(start_datetime)
 
-        night = observer.tonight(time=t0, horizon=-18 * u.deg)
+        # If t0 is during the day, tonight() returns the night that ended this morning,
+        # not the upcoming night. Advance to the next dusk before querying.
+        horizon = -18 * u.deg
+        if not observer.is_night(t0, horizon=horizon):
+            next_dusk = observer.sun_set_time(t0, which="next", horizon=horizon)
+            t0 = next_dusk
+
+        night = observer.tonight(time=t0, horizon=horizon)
         night_start: datetime = night[0].to_datetime(timezone=UTC)
         night_end: datetime = night[1].to_datetime(timezone=UTC)
 

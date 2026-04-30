@@ -7,6 +7,7 @@ const API_PATHS = {
   predict: "/scheduler/predict",
   predictInline: "/scheduler/predict/inline",
   generateMockPlans: "/scheduler/mock-plans/generate",
+  skyPlot: "/scheduler/sky-plot",
 };
 
 const EMPTY_JSON = "{}";
@@ -72,7 +73,58 @@ const elements = {
 const state = {
   generatedPlans: [],
   generatedSummary: null,
+  // Context used to fetch sky plots for batch cards. Set before each run.
+  skyPlotBase: null, // { plans: list<dict>, siteName: str, environment: obj|null }
 };
+
+// Shared lightbox for all sky plot thumbnails
+let _lightbox = null;
+function _getLightbox() {
+  if (!_lightbox) {
+    _lightbox = document.createElement("div");
+    _lightbox.id = "sky-plot-lightbox";
+    _lightbox.hidden = true;
+    const img = document.createElement("img");
+    img.alt = "Sky plot (full size)";
+    _lightbox.append(img);
+    _lightbox.addEventListener("click", () => { _lightbox.hidden = true; });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") _lightbox.hidden = true;
+    });
+    document.body.append(_lightbox);
+  }
+  return _lightbox;
+}
+
+async function _attachSkyPlot(card, plans, siteName, time, environment) {
+  try {
+    const resp = await fetch(API_PATHS.skyPlot, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plans, site_name: siteName, time, environment: environment ?? null }),
+    });
+    if (!resp.ok) return;
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "batch-card-plot";
+    const thumb = document.createElement("img");
+    thumb.className = "sky-plot-thumb";
+    thumb.src = url;
+    thumb.alt = "Sky plot";
+    thumb.title = "Click to enlarge";
+    thumb.addEventListener("click", () => {
+      const lb = _getLightbox();
+      lb.querySelector("img").src = url;
+      lb.hidden = false;
+    });
+    wrapper.append(thumb);
+    card.append(wrapper);
+  } catch {
+    // Sky plot is non-critical; silently ignore fetch errors.
+  }
+}
 let selectedTraceItem = null;
 
 function splitList(value) {
@@ -533,11 +585,19 @@ function renderImmediate(data) {
     data.simulated ? "Simulated" : containsToo ? "ToO batch" : "Ready",
     pillStatus,
   );
-  const summaryChildren = [renderBatchCard(batch, { feasibleCount: data.feasible_plan_count })];
+  const batchCard = renderBatchCard(batch, { feasibleCount: data.feasible_plan_count });
+  const summaryChildren = [batchCard];
   if (rejectedSection) summaryChildren.push(rejectedSection);
   elements.immediateSummary.className = "";
   elements.immediateSummary.replaceChildren(...summaryChildren);
   renderTrace(data.trace, "Immediate");
+  if (state.skyPlotBase) {
+    const { plans, siteName, environment, defaultTime } = state.skyPlotBase;
+    const batchTime = batch.start_time ?? batch.predicted_start ?? defaultTime ?? null;
+    if (batchTime) {
+      _attachSkyPlot(batchCard, plans, siteName, batchTime, environment);
+    }
+  }
 }
 
 function renderPrediction(data) {
@@ -554,7 +614,15 @@ function renderPrediction(data) {
   ]);
 
   for (const batch of batches.slice(0, PREDICTION_BATCH_LIMIT)) {
-    elements.predictionList.append(renderBatchCard(batch));
+    const card = renderBatchCard(batch);
+    elements.predictionList.append(card);
+    if (state.skyPlotBase) {
+      const { plans, siteName, environment } = state.skyPlotBase;
+      const batchTime = batch.predicted_start ?? null;
+      if (batchTime) {
+        _attachSkyPlot(card, plans, siteName, batchTime, environment);
+      }
+    }
   }
 
   if (batches.length > PREDICTION_BATCH_LIMIT) {
@@ -1190,10 +1258,21 @@ async function runImmediate() {
       payload.plans = state.generatedPlans;
     }
 
+    state.skyPlotBase = {
+      plans: useInlinePlans() ? state.generatedPlans : [],
+      siteName: payload.site_name,
+      environment: payload.environment ?? null,
+      defaultTime: payload.now ?? new Date().toISOString(),
+    };
+
     const data = await requestJson(endpoint, {
       method: "POST",
       body: JSON.stringify(payload),
     });
+    // Prefer the actual simulated dusk time if the scheduler advanced the clock
+    if (data.simulated_time && state.skyPlotBase) {
+      state.skyPlotBase.defaultTime = data.simulated_time;
+    }
     renderImmediate(data);
   } catch (error) {
     setState(elements.immediateState, "Error", "error");
@@ -1224,6 +1303,13 @@ async function runPredict() {
       delete payload.plan_paths;
       payload.plans = state.generatedPlans;
     }
+
+    state.skyPlotBase = {
+      plans: useInlinePlans() ? state.generatedPlans : [],
+      siteName: payload.site_name,
+      environment: payload.environment ?? null,
+      defaultTime: startDatetime,
+    };
 
     const data = await requestJson(endpoint, {
       method: "POST",
@@ -1349,6 +1435,20 @@ function renderConstraintSuites(constraints) {
         <span class="scenario-name">${s.name}</span>
         <span class="badge ${outcomeClass}">${outcomeLabel}</span>
         <span class="scenario-description">${s.description}</span>`;
+      if (s.sky_plot_b64) {
+        const url = `data:image/png;base64,${s.sky_plot_b64}`;
+        const thumb = document.createElement("img");
+        thumb.className = "sky-plot-thumb";
+        thumb.src = url;
+        thumb.alt = "Sky plot";
+        thumb.title = "Click to enlarge";
+        thumb.addEventListener("click", () => {
+          const lb = _getLightbox();
+          lb.querySelector("img").src = url;
+          lb.hidden = false;
+        });
+        li.append(thumb);
+      }
       list.appendChild(li);
     });
     item.appendChild(list);

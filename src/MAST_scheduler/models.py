@@ -5,7 +5,13 @@ from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
 
 from .constraint_registry import ConstraintSpec, ScenarioSpec
-from .trace import ImmediateScheduleTrace, PredictedScheduleTrace, RejectedPlanSummary, SetupBreakdown, TeardownBreakdown
+from .trace import (
+    ImmediateScheduleTrace,
+    PredictedScheduleTrace,
+    RejectedPlanSummary,
+    SetupBreakdown,
+    TeardownBreakdown,
+)
 
 __all__ = ["ConstraintSpec", "ScenarioSpec", "SetupBreakdown", "TeardownBreakdown"]
 
@@ -122,6 +128,13 @@ class InlinePredictRequest(InlinePlansMixin):
     include_trace: bool = False
 
 
+class SkyPlotRequest(BaseModel):
+    plans: list[dict]
+    site_name: str = "ns"
+    time: datetime
+    environment: EnvironmentConditions | None = None
+
+
 MOCK_PRESET_BALANCED = "balanced"
 MOCK_PRESET_CONSTRAINTS_HEAVY = "constraints-heavy"
 MOCK_PRESET_HIGHSPEC_HEAVY = "highspec-heavy"
@@ -168,6 +181,7 @@ class MockPlanGenerateRequest(BaseModel):
     include_airmass_constraints: bool = True
     include_seeing_constraints: bool = True
     include_calibration: bool = False
+    site_name: str = "ns"
 
 
 class MockPlanSummary(BaseModel):

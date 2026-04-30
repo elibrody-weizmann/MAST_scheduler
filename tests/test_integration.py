@@ -1027,7 +1027,7 @@ class TestRepeatObservability:
 
 
 class TestRejectedPlans:
-    """rejected_plans is always present in ImmediateResponse and populated when plans are dropped."""
+    """rejected_plans is always present in ImmediateResponse and populated when plans are dropped."""  # noqa: E501
 
     def test_rejected_plans_always_present(self):
         with TestClient(app) as client:
@@ -1118,3 +1118,63 @@ class TestRejectedPlans:
         assert response.status_code == 200
         data = response.json()
         assert data["rejected_plans"] == []
+
+
+class TestSkyPlot:
+    def test_sky_plot_endpoint_returns_png(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/sky-plot",
+                json={
+                    "plans": [load_plan("minimal").model_dump(mode="json")],
+                    "site_name": "ns",
+                    "time": NOW_NIGHT.isoformat(),
+                },
+            )
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert response.content[:4] == b"\x89PNG"
+
+    def test_sky_plot_unknown_site_returns_400(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/sky-plot",
+                json={
+                    "plans": [],
+                    "site_name": "unknown_site",
+                    "time": NOW_NIGHT.isoformat(),
+                },
+            )
+        assert response.status_code == 400
+
+    def test_sky_plot_empty_plans_returns_png(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/sky-plot",
+                json={
+                    "plans": [],
+                    "site_name": "ns",
+                    "time": NOW_NIGHT.isoformat(),
+                    "environment": {
+                        "moon_illumination_pct": 75.0,
+                        "moon_alt_deg": 45.0,
+                        "moon_az_deg": 120.0,
+                    },
+                },
+            )
+        assert response.status_code == 200
+        assert response.content[:4] == b"\x89PNG"
+
+    def test_constraint_suites_include_sky_plot_b64(self):
+        with TestClient(app) as client:
+            response = client.get("/scheduler/constraints")
+        assert response.status_code == 200
+        data = response.json()
+        # At least one scenario (airmass or moon separation) must have a sky_plot_b64
+        found = False
+        for constraint in data["constraints"]:
+            for scenario in constraint["scenarios"]:
+                if scenario.get("sky_plot_b64"):
+                    assert scenario["sky_plot_b64"][:4] == "iVBO"  # PNG base64 prefix
+                    found = True
+        assert found, "Expected at least one scenario with a sky_plot_b64"

@@ -1,5 +1,24 @@
 # Decisions
 
+## [2026-04-30] Sky plot endpoint delivers images via separate fetch, not embedded in batch JSON
+
+**Why:** Sky plot PNG generation is compute-heavy (matplotlib rendering) and adds ~7 KB
+per batch to the payload. Embedding base64 in batch JSON would bloat a full-night prediction
+response significantly (50+ batches × 7 KB = 350+ KB of image data), and couples a
+visualisation concern to the core scheduling response contract.
+
+**What:** Added `POST /scheduler/sky-plot` that accepts `{ plans, site_name, time, environment }`
+and returns `image/png` directly. The UI fetches plots asynchronously after rendering each
+batch card, injecting the thumbnail once loaded. Failures are silent — a missing plot never
+breaks the batch card. Constraint-suite scenario plots are the exception: those are generated
+eagerly at server startup and embedded as `sky_plot_b64` in the `ScenarioSpec` model, because
+there are only a handful of them and they need to be included in the `/scheduler/constraints`
+response.
+
+**Implications:** Batch JSON stays lean; clients that need plots call the endpoint explicitly.
+`ScenarioSpec` now carries an optional `sky_plot_b64` field. Startup time increases by ~1–2 s
+due to scenario plot pre-generation.
+
 ## [2026-04-29] Rejected plans always returned in ImmediateResponse
 
 **Why:** Rejection information was only reachable via `include_trace=true` and required the user to drill into the trace timeline. Operators need to know at a glance which plans were dropped and why without enabling the full trace.

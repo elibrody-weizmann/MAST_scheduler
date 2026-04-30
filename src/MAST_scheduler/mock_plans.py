@@ -4,7 +4,13 @@ import random
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 
+import astropy.units as u
+from astroplan import Observer
+from astropy.coordinates import EarthLocation
+from astropy.time import Time
+
 from .models import (
+    KNOWN_SITES,
     MOCK_PRESET_BALANCED,
     MOCK_PRESET_BRIGHT_MOON,
     MOCK_PRESET_CONSTRAINTS_HEAVY,
@@ -85,12 +91,28 @@ _PRESET_OVERRIDES = {
 }
 
 
+def _tonight_dusk(site_name: str) -> datetime:
+    """Return tonight's astronomical dusk (18° below horizon) for the given site.
+
+    If it is currently night, returns the start of the ongoing night.
+    """
+    coords = KNOWN_SITES.get(site_name, KNOWN_SITES["ns"])
+    location = EarthLocation(lon=coords[0] * u.deg, lat=coords[1] * u.deg, height=coords[2] * u.m)
+    observer = Observer(location=location)
+    horizon = -18 * u.deg
+    now = Time(datetime.now(tz=UTC))
+    if observer.is_night(now, horizon=horizon):
+        dusk = observer.sun_set_time(now, which="previous", horizon=horizon)
+    else:
+        dusk = observer.sun_set_time(now, which="next", horizon=horizon)
+    return dusk.to_datetime(timezone=UTC)
+
+
 def generate_mock_plans(req: MockPlanGenerateRequest) -> MockPlanGenerateResponse:
     _validate_generate_request(req)
     rng = random.Random(req.seed if req.seed is not None else 0)
     preset = _PRESET_OVERRIDES[req.preset]
-    today = datetime.now(tz=UTC)
-    base_time = today.replace(hour=0, minute=0, second=0, microsecond=0)
+    base_time = _tonight_dusk(req.site_name)
     plans: list[dict] = []
 
     for index in range(req.count):

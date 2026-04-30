@@ -4,8 +4,10 @@ from datetime import UTC
 
 import astropy.units as u
 from astropy.coordinates import EarthLocation
+from astropy.time import Time
 from common.models.plans import Plan
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import Response as FastAPIResponse
 
 from ..builder import _compute_setup_overhead, _compute_teardown
 from ..constraint_registry import CONSTRAINT_REGISTRY
@@ -24,9 +26,11 @@ from ..models import (
     MockPlanGenerateResponse,
     PredictRequest,
     PredictResponse,
+    SkyPlotRequest,
     StatusResponse,
 )
 from ..scheduler import Scheduler
+from ..sky_plot import generate_sky_plot
 from ..trace import ImmediateScheduleTrace, RejectedPlanSummary
 
 router = APIRouter(prefix="/scheduler")
@@ -339,6 +343,62 @@ def generate_mock(req: MockPlanGenerateRequest) -> MockPlanGenerateResponse:
 @router.get("/constraints", response_model=ConstraintSuitesResponse)
 def get_constraint_suites() -> ConstraintSuitesResponse:
     return ConstraintSuitesResponse(constraints=CONSTRAINT_REGISTRY)
+
+
+@router.post("/sky-plot")
+def sky_plot(req: SkyPlotRequest) -> FastAPIResponse:
+    if req.site_name not in KNOWN_SITES:
+        raise HTTPException(status_code=400, detail=f"Unknown site: {req.site_name!r}")
+    lon, lat, elev = KNOWN_SITES[req.site_name]
+    site = EarthLocation(lon=lon * u.deg, lat=lat * u.deg, height=elev * u.m)
+    time = Time(req.time)
+    env = req.environment
+
+    targets: list[tuple[str, float, float]] = []
+    for plan_dict in req.plans:
+        target = plan_dict.get("target", {})
+        name = target.get("name", "?")
+        ra_hours = target.get("ra_hours")
+        dec_degrees = target.get("dec_degrees")
+        if ra_hours is not None and dec_degrees is not None:
+            try:
+                ra_deg = _parse_ra_hours(ra_hours) * 15.0
+                dec_deg = _parse_dec_degrees(dec_degrees)
+                targets.append((name, ra_deg, dec_deg))
+            except (ValueError, TypeError):
+                pass
+
+    moon_alt = env.moon_alt_deg if env else None
+    moon_az = env.moon_az_deg if env else None
+    moon_illum = env.moon_illumination_pct if env else None
+
+    png = generate_sky_plot(targets, site, time, moon_alt, moon_az, moon_illum)
+    return FastAPIResponse(content=png, media_type="image/png")
+
+
+def _parse_ra_hours(value: object) -> float:
+    """Parse RA as decimal hours from either a float or 'HH:MM:SS.s' string."""
+    if isinstance(value, int | float):
+        return float(value)
+    parts = str(value).split(":")
+    h = float(parts[0])
+    m = float(parts[1]) if len(parts) > 1 else 0.0
+    s = float(parts[2]) if len(parts) > 2 else 0.0
+    return h + m / 60.0 + s / 3600.0
+
+
+def _parse_dec_degrees(value: object) -> float:
+    """Parse Dec as decimal degrees from either a float or '[+/-]DD:MM:SS.s' string."""
+    if isinstance(value, int | float):
+        return float(value)
+    s = str(value).strip()
+    sign = -1.0 if s.startswith("-") else 1.0
+    s = s.lstrip("+-")
+    parts = s.split(":")
+    d = float(parts[0])
+    m = float(parts[1]) if len(parts) > 1 else 0.0
+    sec = float(parts[2]) if len(parts) > 2 else 0.0
+    return sign * (d + m / 60.0 + sec / 3600.0)
 
 
 @router.get("/status", response_model=StatusResponse)
