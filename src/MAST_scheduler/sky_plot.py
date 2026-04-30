@@ -15,19 +15,21 @@ matplotlib.use("Agg")
 _BG = "#0f172a"
 _GRID = "#334155"
 _ACCENT = "#38bdf8"
+_SELECTED_COLOR = "#f472b6"
 _MOON_COLOR = "#fbbf24"
 _BELOW_COLOR = "#475569"
 _TEXT = "#e5e7eb"
 
 
 def generate_sky_plot(
-    targets: list[tuple[str, float, float]],  # (label, ra_deg, dec_deg)
+    targets: list[tuple[str, float, float, str | None]],  # (label, ra_deg, dec_deg, plan_id|None)
     site: EarthLocation,
     time: Time,
     moon_alt_deg: float | None,
     moon_az_deg: float | None,
     moon_illumination_pct: float | None,
     *,
+    selected_plan_ids: set[str] | None = None,
     size_px: int = 1200,
 ) -> bytes:
     dpi = 100
@@ -74,23 +76,15 @@ def generate_sky_plot(
     ax.spines["polar"].set_visible(False)
     ax.set_xticklabels([])
 
-    # Compute and plot targets
-    frame = AltAz(obstime=time, location=site)
-    for name, ra_deg, dec_deg in targets:
-        coord = SkyCoord(ra=ra_deg * u.deg, dec=dec_deg * u.deg, frame="icrs")
-        altaz = coord.transform_to(frame)
-        alt = float(altaz.alt.deg)
-        az = float(altaz.az.deg)
-        if alt >= 0:
-            r = 1 - alt / 90.0
-            color = _ACCENT
-        else:
-            # Below horizon: clamp to rim, dim
-            r = 1.0
-            color = _BELOW_COLOR
-        ax.scatter(math.radians(az), r, color=color, s=80, zorder=5)
+    selected = selected_plan_ids or set()
+
+    def _plot_target(name: str, az_rad: float, r: float, color: str, is_selected: bool) -> None:
+        marker = "*" if is_selected else "o"
+        size = 160 if is_selected else 80
+        zorder = 7 if is_selected else 5
+        ax.scatter(az_rad, r, color=color, s=size, marker=marker, zorder=zorder)
         ax.text(
-            math.radians(az),
+            az_rad,
             r - 0.06,
             name,
             ha="center",
@@ -98,8 +92,60 @@ def generate_sky_plot(
             color=color,
             fontsize=11,
             fontweight="bold",
+            zorder=zorder,
             bbox={"boxstyle": "round,pad=0.2", "facecolor": _BG, "edgecolor": "none", "alpha": 0.7},
         )
+
+    # Resolve all target positions then draw non-selected first, selected on top.
+    frame = AltAz(obstime=time, location=site)
+    resolved: list[tuple[str, float, float, str, bool]] = []  # name, az_rad, r, color, is_selected
+    for name, ra_deg, dec_deg, plan_id in targets:
+        coord = SkyCoord(ra=ra_deg * u.deg, dec=dec_deg * u.deg, frame="icrs")
+        altaz = coord.transform_to(frame)
+        alt = float(altaz.alt.deg)
+        az = float(altaz.az.deg)
+        is_selected = plan_id is not None and plan_id in selected
+        if alt >= 0:
+            r = 1 - alt / 90.0
+            color = _SELECTED_COLOR if is_selected else _ACCENT
+        else:
+            r = 1.0
+            color = _BELOW_COLOR
+        resolved.append((name, math.radians(az), r, color, is_selected))
+
+    for name, az_rad, r, color, is_selected in resolved:
+        if not is_selected:
+            _plot_target(name, az_rad, r, color, is_selected)
+    for name, az_rad, r, color, is_selected in resolved:
+        if is_selected:
+            _plot_target(name, az_rad, r, color, is_selected)
+
+    # Legend
+    legend_items = [
+        (plt.scatter([], [], color=_SELECTED_COLOR, s=100, marker="*"), "Scheduled target"),
+        (plt.scatter([], [], color=_ACCENT, s=60, marker="o"), "Candidate (above horizon)"),
+        (plt.scatter([], [], color=_BELOW_COLOR, s=60, marker="o"), "Below horizon"),
+        (
+            plt.scatter(
+                [], [], s=120, facecolors="none", edgecolors=_MOON_COLOR, linewidths=1.5, marker="o"
+            ),
+            "Moon",
+        ),
+    ]
+    handles, labels = zip(*legend_items, strict=True)
+    ax.legend(
+        handles,
+        labels,
+        loc="lower left",
+        bbox_to_anchor=(-0.12, -0.12),
+        framealpha=0.6,
+        facecolor=_BG,
+        edgecolor=_GRID,
+        labelcolor=_TEXT,
+        fontsize=9,
+        scatterpoints=1,
+        handletextpad=0.4,
+    )
 
     # Moon
     if moon_alt_deg is not None and moon_az_deg is not None:
@@ -142,9 +188,8 @@ def generate_sky_plot(
             fontweight="bold",
         )
 
-    plt.tight_layout(pad=0.1)
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, facecolor=_BG)
+    fig.savefig(buf, format="png", dpi=dpi, facecolor=_BG, bbox_inches="tight")
     plt.close(fig)
     buf.seek(0)
     return buf.read()

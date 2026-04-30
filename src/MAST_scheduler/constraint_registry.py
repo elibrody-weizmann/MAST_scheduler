@@ -40,7 +40,10 @@ def _make_sky_plot_b64(
     moon_illum: float | None = None,
 ) -> str | None:
     try:
-        png = generate_sky_plot(targets, _NS_SITE, _NIGHT_TIME, moon_alt, moon_az, moon_illum)
+        targets_with_id = [(name, ra, dec, None) for name, ra, dec in targets]
+        png = generate_sky_plot(
+            targets_with_id, _NS_SITE, _NIGHT_TIME, moon_alt, moon_az, moon_illum
+        )
         return base64.b64encode(png).decode("ascii")
     except Exception:
         _log.warning("Failed to generate scenario sky plot", exc_info=True)

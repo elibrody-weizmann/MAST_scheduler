@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+import math
 from datetime import UTC
 
+logger = logging.getLogger(__name__)
+
 import astropy.units as u
-from astropy.coordinates import EarthLocation
+from astropy.coordinates import AltAz, EarthLocation, get_body
 from astropy.time import Time
 from common.models.plans import Plan
 from fastapi import APIRouter, HTTPException, Request
@@ -354,17 +358,18 @@ def sky_plot(req: SkyPlotRequest) -> FastAPIResponse:
     time = Time(req.time)
     env = req.environment
 
-    targets: list[tuple[str, float, float]] = []
+    targets: list[tuple[str, float, float, str | None]] = []
     for plan_dict in req.plans:
         target = plan_dict.get("target", {})
         name = target.get("name", "?")
         ra_hours = target.get("ra_hours")
         dec_degrees = target.get("dec_degrees")
+        plan_id = plan_dict.get("ulid") or plan_dict.get("id") or None
         if ra_hours is not None and dec_degrees is not None:
             try:
                 ra_deg = _parse_ra_hours(ra_hours) * 15.0
                 dec_deg = _parse_dec_degrees(dec_degrees)
-                targets.append((name, ra_deg, dec_deg))
+                targets.append((name, ra_deg, dec_deg, plan_id))
             except (ValueError, TypeError):
                 pass
 
@@ -372,8 +377,49 @@ def sky_plot(req: SkyPlotRequest) -> FastAPIResponse:
     moon_az = env.moon_az_deg if env else None
     moon_illum = env.moon_illumination_pct if env else None
 
-    png = generate_sky_plot(targets, site, time, moon_alt, moon_az, moon_illum)
+    # Fall back to computing moon position/illumination from the requested time.
+    computed_alt, computed_az, computed_illum = _compute_moon(time, site)
+    if moon_alt is None:
+        moon_alt = computed_alt
+    if moon_az is None:
+        moon_az = computed_az
+    if moon_illum is None:
+        moon_illum = computed_illum
+
+    try:
+        png = generate_sky_plot(
+            targets,
+            site,
+            time,
+            moon_alt,
+            moon_az,
+            moon_illum,
+            selected_plan_ids=set(req.selected_plan_ids),
+        )
+    except Exception as exc:
+        logger.exception("sky-plot generation failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Sky plot generation failed: {exc}") from exc
     return FastAPIResponse(content=png, media_type="image/png")
+
+
+def _compute_moon(
+    time: Time, site: EarthLocation
+) -> tuple[float | None, float | None, float | None]:
+    """Return (alt_deg, az_deg, illumination_pct) for the Moon at the given time and site."""
+    try:
+        frame = AltAz(obstime=time, location=site)
+        moon = get_body("moon", time, location=site)
+        moon_altaz = moon.transform_to(frame)
+        alt = float(moon_altaz.alt.deg)
+        az = float(moon_altaz.az.deg)
+
+        # Illumination via elongation from the Sun
+        sun = get_body("sun", time, location=site)
+        elongation = moon.separation(sun)
+        illum = (1 - math.cos(float(elongation.rad))) / 2 * 100.0
+        return alt, az, illum
+    except Exception:
+        return None, None, None
 
 
 def _parse_ra_hours(value: object) -> float:

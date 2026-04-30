@@ -133,6 +133,7 @@ class SkyPlotRequest(BaseModel):
     site_name: str = "ns"
     time: datetime
     environment: EnvironmentConditions | None = None
+    selected_plan_ids: list[str] = []
 
 
 MOCK_PRESET_BALANCED = "balanced"

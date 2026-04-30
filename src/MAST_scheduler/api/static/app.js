@@ -96,14 +96,33 @@ function _getLightbox() {
   return _lightbox;
 }
 
-async function _attachSkyPlot(card, plans, siteName, time, environment) {
+async function _attachSkyPlot(card, plans, siteName, time, environment, selectedPlanIds = []) {
   try {
     const resp = await fetch(API_PATHS.skyPlot, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plans, site_name: siteName, time, environment: environment ?? null }),
+      body: JSON.stringify({
+        plans,
+        site_name: siteName,
+        time,
+        environment: environment ?? null,
+        selected_plan_ids: selectedPlanIds,
+      }),
     });
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      let detail = `HTTP ${resp.status}`;
+      try {
+        const body = await resp.json();
+        if (body.detail) detail = body.detail;
+      } catch {
+        /* ignore parse failure */
+      }
+      const err = document.createElement("div");
+      err.className = "sky-plot-error";
+      err.textContent = `Sky plot unavailable: ${detail}`;
+      card.append(err);
+      return;
+    }
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
 
@@ -121,8 +140,11 @@ async function _attachSkyPlot(card, plans, siteName, time, environment) {
     });
     wrapper.append(thumb);
     card.append(wrapper);
-  } catch {
-    // Sky plot is non-critical; silently ignore fetch errors.
+  } catch (err) {
+    const el = document.createElement("div");
+    el.className = "sky-plot-error";
+    el.textContent = `Sky plot unavailable: ${err.message ?? err}`;
+    card.append(el);
   }
 }
 let selectedTraceItem = null;
@@ -505,7 +527,19 @@ function formatMinutesSeconds(seconds) {
   return `${minutes}m ${remainingSeconds}s`;
 }
 
-function renderRejectedPlans(rejectedPlans) {
+function buildPlanIndex(plans) {
+  const index = new Map();
+  for (const p of plans ?? []) {
+    const id = p.ulid ?? p.plan_id ?? p.id;
+    if (!id) continue;
+    const instrument = p.spec_assignment?.instrument ?? p.instrument ?? null;
+    const targetName = p.target?.name ?? p.target_name ?? null;
+    index.set(id, { instrument, targetName });
+  }
+  return index;
+}
+
+function renderRejectedPlans(rejectedPlans, planIndex = new Map()) {
   if (!rejectedPlans || rejectedPlans.length === 0) return null;
 
   const section = document.createElement("section");
@@ -540,6 +574,16 @@ function renderRejectedPlans(rejectedPlans) {
       chip.className = "plan-id-chip";
       chip.textContent = rp.plan_id;
       tdId.append(chip);
+      const meta = planIndex.get(rp.plan_id);
+      if (meta) {
+        const parts = [meta.instrument, meta.targetName].filter(Boolean);
+        if (parts.length > 0) {
+          const summary = document.createElement("div");
+          summary.className = "plan-id-meta";
+          summary.textContent = parts.join(" · ");
+          tdId.append(summary);
+        }
+      }
       const tdReason = document.createElement("td");
       tdReason.textContent = rp.reason_message || rp.reason_code;
       tr.append(tdId, tdReason);
@@ -565,7 +609,8 @@ function renderImmediate(data) {
     elements.simulatedBanner.hidden = true;
   }
 
-  const rejectedSection = renderRejectedPlans(data.rejected_plans);
+  const planIndex = buildPlanIndex(state.generatedPlans);
+  const rejectedSection = renderRejectedPlans(data.rejected_plans, planIndex);
 
   if (!data.batch) {
     setState(elements.immediateState, "No batch", "");
@@ -595,7 +640,7 @@ function renderImmediate(data) {
     const { plans, siteName, environment, defaultTime } = state.skyPlotBase;
     const batchTime = batch.start_time ?? batch.predicted_start ?? defaultTime ?? null;
     if (batchTime) {
-      _attachSkyPlot(batchCard, plans, siteName, batchTime, environment);
+      _attachSkyPlot(batchCard, plans, siteName, batchTime, environment, batch.plan_ids ?? []);
     }
   }
 }
@@ -620,7 +665,7 @@ function renderPrediction(data) {
       const { plans, siteName, environment } = state.skyPlotBase;
       const batchTime = batch.predicted_start ?? null;
       if (batchTime) {
-        _attachSkyPlot(card, plans, siteName, batchTime, environment);
+        _attachSkyPlot(card, plans, siteName, batchTime, environment, batch.plan_ids ?? []);
       }
     }
   }

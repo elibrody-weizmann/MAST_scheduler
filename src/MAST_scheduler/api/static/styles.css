@@ -444,6 +444,15 @@ textarea {
   text-align: center;
 }
 
+.sky-plot-error {
+  border: 1px solid var(--error, #ef4444);
+  border-radius: 6px;
+  color: var(--error, #ef4444);
+  font-size: 0.75rem;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+
 .sky-plot-thumb {
   border: 1px solid var(--border, #334155);
   border-radius: 6px;
@@ -1036,6 +1045,7 @@ textarea {
 .rejected-plans-table td {
   padding: 0.25rem 0.5rem 0.25rem 0;
   vertical-align: top;
+  color: var(--text);
 }
 
 .rejected-plans-table td:first-child {
@@ -1045,9 +1055,17 @@ textarea {
 
 .plan-id-chip {
   font-size: 0.75rem;
-  background: var(--surface-2, #f0f0f0);
+  background: var(--card-muted);
+  color: var(--text);
   border-radius: 0.3rem;
   padding: 0.1rem 0.35rem;
+}
+
+.plan-id-meta {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+  font-family: inherit;
 }
 
 @media (max-width: 820px) {
