@@ -27,6 +27,7 @@ from ..models import (
     StatusResponse,
 )
 from ..scheduler import Scheduler
+from ..trace import ImmediateScheduleTrace, RejectedPlanSummary
 
 router = APIRouter(prefix="/scheduler")
 
@@ -116,6 +117,50 @@ def _serialize_batch(batch) -> dict:
     return raw
 
 
+def _collect_rejected_plans(trace: ImmediateScheduleTrace) -> list[RejectedPlanSummary]:
+    seen: set[str] = set()
+    result: list[RejectedPlanSummary] = []
+
+    for stage in trace.filter_stages:
+        for dropped in stage.dropped:
+            if dropped.plan_id in seen:
+                continue
+            seen.add(dropped.plan_id)
+            first = dropped.rationales[0] if dropped.rationales else None
+            result.append(
+                RejectedPlanSummary(
+                    plan_id=dropped.plan_id,
+                    stage=stage.stage,
+                    stage_label=stage.label,
+                    reason_code=first.code if first else "",
+                    reason_message=first.message if first else "",
+                )
+            )
+
+    if trace.build:
+        build_drops = (
+            trace.build.dropped_by_exposure_cap
+            + trace.build.dropped_by_missing_requested_exposure
+            + trace.build.dropped_by_unit_exclusivity
+        )
+        for dropped in build_drops:
+            if dropped.plan_id in seen:
+                continue
+            seen.add(dropped.plan_id)
+            first = dropped.rationales[0] if dropped.rationales else None
+            result.append(
+                RejectedPlanSummary(
+                    plan_id=dropped.plan_id,
+                    stage="build",
+                    stage_label="Batch Build",
+                    reason_code=first.code if first else "",
+                    reason_message=first.message if first else "",
+                )
+            )
+
+    return result
+
+
 def _build_immediate_response(
     batch,
     trace,
@@ -123,6 +168,7 @@ def _build_immediate_response(
     environment,
     scheduler: Scheduler,
 ) -> ImmediateResponse:
+    rejected_plans = _collect_rejected_plans(trace)
     if batch is None:
         feasible_count = len(trace.filter_stages[-1].kept_plan_ids) if trace.filter_stages else 0
         return ImmediateResponse(
@@ -131,6 +177,7 @@ def _build_immediate_response(
             message="No feasible plans",
             environment=environment,
             trace=trace if include_trace else None,
+            rejected_plans=rejected_plans,
             simulated=trace.simulated,
             simulated_time=trace.simulated_time,
         )
@@ -151,6 +198,7 @@ def _build_immediate_response(
         ),
         environment=environment,
         trace=trace if include_trace else None,
+        rejected_plans=rejected_plans,
         simulated=trace.simulated,
         simulated_time=trace.simulated_time,
     )

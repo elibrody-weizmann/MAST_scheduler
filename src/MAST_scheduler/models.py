@@ -5,7 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
 
 from .constraint_registry import ConstraintSpec, ScenarioSpec
-from .trace import ImmediateScheduleTrace, PredictedScheduleTrace, SetupBreakdown, TeardownBreakdown
+from .trace import ImmediateScheduleTrace, PredictedScheduleTrace, RejectedPlanSummary, SetupBreakdown, TeardownBreakdown
 
 __all__ = ["ConstraintSpec", "ScenarioSpec", "SetupBreakdown", "TeardownBreakdown"]
 
@@ -81,6 +81,7 @@ class ImmediateResponse(BaseModel):
     message: str = ""
     environment: EnvironmentConditions | None = None
     trace: ImmediateScheduleTrace | None = None
+    rejected_plans: list[RejectedPlanSummary] = Field(default_factory=list)
     simulated: bool = False
     simulated_time: datetime | None = None
 

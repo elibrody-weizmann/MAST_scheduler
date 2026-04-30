@@ -120,9 +120,11 @@ Returns the next batch to run right now.
 }
 ```
 
-Response includes an `ImmediateBatch` object (typed Pydantic model: `ulid`, `instrument`, `disperser`, `exposure_time`, `num_exposures`, `allocated_units`, plus raw `BatchData` fields), `feasible_plan_count`, and echoed `environment`.
+Response includes an `ImmediateBatch` object (typed Pydantic model: `ulid`, `instrument`, `disperser`, `exposure_time`, `num_exposures`, `allocated_units`, plus raw `BatchData` fields), `feasible_plan_count`, echoed `environment`, and `rejected_plans`.
 
 `feasible_plan_count` is the number of plans that survived every filter stage (not just those that ended up in the winning instrument group). The UI displays this as "Plans passed filters".
+
+`rejected_plans` is always returned (not trace-gated) and lists every plan that was dropped, with the stage it failed (`stage`, `stage_label`) and the primary rejection code and message (`reason_code`, `reason_message`). The UI renders this as a "Rejected Plans" section below the batch card.
 
 Within a single immediate batch, unit assignments are exclusive: the same operational unit is never assigned to more than one plan in that batch.
 

@@ -1024,3 +1024,97 @@ class TestRepeatObservability:
         if filter_stages:
             last_stage_kept = len(filter_stages[-1]["kept_plan_ids"])
             assert data["feasible_plan_count"] == last_stage_kept
+
+
+class TestRejectedPlans:
+    """rejected_plans is always present in ImmediateResponse and populated when plans are dropped."""
+
+    def test_rejected_plans_always_present(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/scheduler/immediate/inline",
+                json={
+                    "plans": [load_plan("minimal").model_dump(mode="json")],
+                    "operational_units": ["mast01"],
+                    "site_name": "ns",
+                    "now": NOW_DAY.isoformat(),
+                },
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert "rejected_plans" in data
+        assert isinstance(data["rejected_plans"], list)
+
+    def test_rejected_plans_populated_when_time_window_fails(self):
+        # time_window plan has window end = 2026-04-27T06:00:00Z; pass a now after that.
+        plan = load_plan("time_window")
+        after_window = datetime(2026, 4, 27, 7, 0, 0, tzinfo=UTC)
+        obs = MagicMock(spec=Observer)
+        obs.is_night.return_value = True
+        obs.moon_illumination.return_value = 0.05
+        moon_altaz = MagicMock()
+        moon_altaz.alt = MagicMock()
+        moon_altaz.az = MagicMock()
+        moon_altaz.frame = MagicMock()
+        obs.moon_altaz.return_value = moon_altaz
+
+        with (
+            patch("MAST_scheduler.filters._plan_skycoord") as mock_coord,
+            patch("MAST_scheduler.scheduler.Observer", return_value=obs),
+            patch("MAST_scheduler.filters.Observer", return_value=obs),
+            TestClient(app) as client,
+        ):
+            target = MagicMock()
+            target.transform_to.return_value = MagicMock(alt=MagicMock(deg=50.0))
+            target.separation.return_value = MagicMock(deg=90.0)
+            mock_coord.return_value = target
+            response = client.post(
+                "/scheduler/immediate/inline",
+                json={
+                    "plans": [plan.model_dump(mode="json")],
+                    "operational_units": ["mast01"],
+                    "site_name": "ns",
+                    "now": after_window.isoformat(),
+                },
+            )
+        assert response.status_code == 200
+        data = response.json()
+        rejected = data["rejected_plans"]
+        assert len(rejected) == 1
+        entry = rejected[0]
+        assert entry["plan_id"] == str(plan.ulid)
+        assert entry["stage"] == "within_time_window"
+        assert entry["reason_code"] == "after_window_end"
+
+    def test_rejected_plans_empty_when_all_pass(self):
+        obs = MagicMock(spec=Observer)
+        obs.is_night.return_value = True
+        obs.moon_illumination.return_value = 0.05
+        moon_altaz = MagicMock()
+        moon_altaz.alt = MagicMock()
+        moon_altaz.az = MagicMock()
+        moon_altaz.frame = MagicMock()
+        obs.moon_altaz.return_value = moon_altaz
+
+        with (
+            patch("MAST_scheduler.filters._plan_skycoord") as mock_coord,
+            patch("MAST_scheduler.scheduler.Observer", return_value=obs),
+            patch("MAST_scheduler.filters.Observer", return_value=obs),
+            TestClient(app) as client,
+        ):
+            target = MagicMock()
+            target.transform_to.return_value = MagicMock(alt=MagicMock(deg=50.0))
+            target.separation.return_value = MagicMock(deg=90.0)
+            mock_coord.return_value = target
+            response = client.post(
+                "/scheduler/immediate/inline",
+                json={
+                    "plans": [load_plan("minimal").model_dump(mode="json")],
+                    "operational_units": ["mast01"],
+                    "site_name": "ns",
+                    "now": NOW_NIGHT.isoformat(),
+                },
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["rejected_plans"] == []

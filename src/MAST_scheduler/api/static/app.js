@@ -453,6 +453,54 @@ function formatMinutesSeconds(seconds) {
   return `${minutes}m ${remainingSeconds}s`;
 }
 
+function renderRejectedPlans(rejectedPlans) {
+  if (!rejectedPlans || rejectedPlans.length === 0) return null;
+
+  const section = document.createElement("section");
+  section.className = "rejected-plans";
+
+  const heading = document.createElement("h3");
+  heading.textContent = `Rejected Plans (${rejectedPlans.length})`;
+  section.append(heading);
+
+  // Group by stage_label
+  const byStage = new Map();
+  for (const rp of rejectedPlans) {
+    if (!byStage.has(rp.stage_label)) byStage.set(rp.stage_label, []);
+    byStage.get(rp.stage_label).push(rp);
+  }
+
+  for (const [stageLabel, plans] of byStage) {
+    const group = document.createElement("div");
+    group.className = "rejected-stage-group";
+
+    const groupHeading = document.createElement("h4");
+    groupHeading.textContent = stageLabel;
+    group.append(groupHeading);
+
+    const table = document.createElement("table");
+    table.className = "rejected-plans-table";
+    const tbody = document.createElement("tbody");
+    for (const rp of plans) {
+      const tr = document.createElement("tr");
+      const tdId = document.createElement("td");
+      const chip = document.createElement("code");
+      chip.className = "plan-id-chip";
+      chip.textContent = rp.plan_id;
+      tdId.append(chip);
+      const tdReason = document.createElement("td");
+      tdReason.textContent = rp.reason_message || rp.reason_code;
+      tr.append(tdId, tdReason);
+      tbody.append(tr);
+    }
+    table.append(tbody);
+    group.append(table);
+    section.append(group);
+  }
+
+  return section;
+}
+
 function renderImmediate(data) {
   elements.immediateJson.textContent = formatJson(data);
 
@@ -465,10 +513,13 @@ function renderImmediate(data) {
     elements.simulatedBanner.hidden = true;
   }
 
+  const rejectedSection = renderRejectedPlans(data.rejected_plans);
+
   if (!data.batch) {
     setState(elements.immediateState, "No batch", "");
     elements.immediateSummary.className = "empty-state";
     elements.immediateSummary.textContent = data.message || "No feasible plans.";
+    if (rejectedSection) elements.immediateSummary.after(rejectedSection);
     renderTrace(data.trace, "Immediate");
     return;
   }
@@ -482,10 +533,10 @@ function renderImmediate(data) {
     data.simulated ? "Simulated" : containsToo ? "ToO batch" : "Ready",
     pillStatus,
   );
+  const summaryChildren = [renderBatchCard(batch, { feasibleCount: data.feasible_plan_count })];
+  if (rejectedSection) summaryChildren.push(rejectedSection);
   elements.immediateSummary.className = "";
-  elements.immediateSummary.replaceChildren(
-    renderBatchCard(batch, { feasibleCount: data.feasible_plan_count }),
-  );
+  elements.immediateSummary.replaceChildren(...summaryChildren);
   renderTrace(data.trace, "Immediate");
 }
 

@@ -1,5 +1,13 @@
 # Decisions
 
+## [2026-04-29] Rejected plans always returned in ImmediateResponse
+
+**Why:** Rejection information was only reachable via `include_trace=true` and required the user to drill into the trace timeline. Operators need to know at a glance which plans were dropped and why without enabling the full trace.
+
+**What:** Added `RejectedPlanSummary` model to `trace.py` and a `rejected_plans: list[RejectedPlanSummary]` field to `ImmediateResponse`. The field is always populated (not trace-gated) by aggregating all `DroppedPlanTrace` entries from `filter_stages` and `build` in `_collect_rejected_plans()` in `routes.py`. Each entry carries the plan ID, the stage it was dropped at, and the primary rejection code and message. The UI (`renderRejectedPlans` in `app.js`) renders a grouped table below the batch card.
+
+**Implications:** `ImmediateResponse` now always includes `rejected_plans`; clients that relied on the trace for rejection data can switch to this field. Predict mode is excluded — per-iteration rejections remain in the trace only, as a plan's feasibility varies across the night.
+
 ## [2026-04-29] Repeat observability: per-plan quota tracking and plans-remaining fix
 
 **Why:** The prediction UI showed a "Remaining plans" count that did not decrement correctly. Three root causes: (1) plans with `ulid=None` were never evicted from `remaining` because `None not in set_of_strings` is always `True`; (2) `feasible_plan_count` in immediate responses counted only plans in the winning instrument group, not all plans that passed the filter chain; (3) no structured observability existed for per-plan repeat state (quota, completions, exhaustion).

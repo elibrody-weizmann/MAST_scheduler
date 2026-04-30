@@ -955,6 +955,60 @@ textarea {
   font-weight: 700;
 }
 
+.rejected-plans {
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+}
+
+.rejected-plans h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rejected-stage-group {
+  margin-bottom: 0.75rem;
+}
+
+.rejected-stage-group:last-child {
+  margin-bottom: 0;
+}
+
+.rejected-stage-group h4 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+}
+
+.rejected-plans-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.rejected-plans-table td {
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  vertical-align: top;
+}
+
+.rejected-plans-table td:first-child {
+  white-space: nowrap;
+  padding-right: 0.75rem;
+}
+
+.plan-id-chip {
+  font-size: 0.75rem;
+  background: var(--surface-2, #f0f0f0);
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.35rem;
+}
+
 @media (max-width: 820px) {
 
   .hero,

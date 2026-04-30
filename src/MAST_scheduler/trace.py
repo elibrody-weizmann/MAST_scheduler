@@ -58,6 +58,14 @@ class DroppedPlanTrace(BaseModel):
     rationales: list[TraceRationale] = Field(default_factory=list)
 
 
+class RejectedPlanSummary(BaseModel):
+    plan_id: str
+    stage: str
+    stage_label: str
+    reason_code: str
+    reason_message: str
+
+
 class FilterStageTrace(BaseModel):
     stage: str
     label: str
