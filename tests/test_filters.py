@@ -206,6 +206,18 @@ def _alt_mock(alt_deg: float):
     return coord
 
 
+def _alt_mock_sequence(alt_degs: list[float]):
+    """Return a mock that returns a different altitude per transform_to call (in order)."""
+    mocks = []
+    for alt in alt_degs:
+        m = MagicMock()
+        m.alt.deg = alt
+        mocks.append(m)
+    coord = MagicMock()
+    coord.transform_to.side_effect = mocks
+    return coord
+
+
 @pytest.mark.constraint_suite(TRACE_STAGE_AIRMASS)
 class TestAirmass:
     def test_no_constraint_passes(self):
@@ -256,6 +268,54 @@ class TestAirmass:
         """alt=90° → airmass=1.0, passes any reasonable limit."""
         plan = load_plan("airmass")
         with patch("MAST_scheduler.filters._plan_skycoord", return_value=_alt_mock(90.0)):
+            result = make_filter([plan]).airmass().plans
+        assert len(result) == 1
+
+    def test_passes_at_start_fails_at_end_rejected(self):
+        """Altitude fine at start/mid but below min at end of window → rejected."""
+        plan = load_plan("minimal")  # no airmass constraint; 900s window
+        with patch(
+            "MAST_scheduler.filters._plan_skycoord",
+            return_value=_alt_mock_sequence([30.0, 20.0, 5.0]),
+        ):
+            result = make_filter([plan]).airmass().plans
+        assert result == []
+
+    def test_end_failure_rationale_includes_offset_and_label(self):
+        """Rejection at end checkpoint records check_offset_seconds > 0 and check_label."""
+        plan = load_plan("minimal")
+        pf = make_filter([plan])
+        with patch(
+            "MAST_scheduler.filters._plan_skycoord",
+            return_value=_alt_mock_sequence([30.0, 20.0, 5.0]),
+        ):
+            pf.airmass()
+        rationale = pf._trace_stages[-1].dropped[0].rationales[0]
+        assert rationale.code == "target_below_min_altitude"
+        assert rationale.values["check_offset_seconds"] > 0
+        assert rationale.values["check_label"] == "end of observation"
+
+    def test_airmass_exceeded_at_end_records_offset(self):
+        """Airmass constraint violation at end checkpoint includes check_offset_seconds."""
+        import math as _math
+
+        plan = load_plan("airmass")  # max_airmass = 1.5
+        good_alt = _math.degrees(_math.asin(1.0 / 1.4))  # airmass ~1.4, passes
+        with patch(
+            "MAST_scheduler.filters._plan_skycoord",
+            return_value=_alt_mock_sequence([good_alt, good_alt, 5.0]),
+        ):
+            pf = make_filter([plan])
+            pf.airmass()
+        rationale = pf._trace_stages[-1].dropped[0].rationales[0]
+        assert rationale.code == "airmass_exceeded"
+        assert rationale.values["check_offset_seconds"] > 0
+
+    def test_no_duration_single_checkpoint_only(self):
+        """Plan with no exposure duration → only start checkpoint; 45° passes."""
+        plan = load_plan("minimal")
+        plan.target.requested_exposure_duration = None
+        with patch("MAST_scheduler.filters._plan_skycoord", return_value=_alt_mock(45.0)):
             result = make_filter([plan]).airmass().plans
         assert len(result) == 1
 
@@ -399,6 +459,46 @@ class TestMoonSeparation:
         assert len(result) == 1
         obs.moon_altaz.assert_not_called()
 
+    def test_passes_at_start_fails_at_end_rejected(self):
+        """Separation fine at start/mid but below min at end of window → rejected."""
+        plan = load_plan("moon")  # min_distance = 45°; 1200s window
+        obs = MagicMock(spec=Observer)
+        obs.moon_altaz.return_value = MagicMock()
+        target = MagicMock()
+        target.separation.side_effect = [
+            MagicMock(deg=60.0),
+            MagicMock(deg=50.0),
+            MagicMock(deg=40.0),
+        ]
+        with (
+            patch("MAST_scheduler.filters.SkyCoord"),
+            patch("MAST_scheduler.filters._plan_skycoord", return_value=target),
+        ):
+            result = make_filter([plan], observer=obs).moon_separation().plans
+        assert result == []
+
+    def test_end_failure_rationale_includes_offset_and_label(self):
+        """Rejection at end checkpoint records check_offset_seconds > 0 and check_label."""
+        plan = load_plan("moon")
+        obs = MagicMock(spec=Observer)
+        obs.moon_altaz.return_value = MagicMock()
+        target = MagicMock()
+        target.separation.side_effect = [
+            MagicMock(deg=60.0),
+            MagicMock(deg=50.0),
+            MagicMock(deg=40.0),
+        ]
+        with (
+            patch("MAST_scheduler.filters.SkyCoord"),
+            patch("MAST_scheduler.filters._plan_skycoord", return_value=target),
+        ):
+            pf = make_filter([plan], observer=obs)
+            pf.moon_separation()
+        rationale = pf._trace_stages[-1].dropped[0].rationales[0]
+        assert rationale.code == "moon_separation_too_small"
+        assert rationale.values["check_offset_seconds"] > 0
+        assert rationale.values["check_label"] == "end of observation"
+
 
 # ---------------------------------------------------------------------------
 # Quorum
@@ -512,7 +612,11 @@ class TestTraceStages:
         obs.is_night.return_value = True
         obs.moon_illumination.return_value = 0.9
         obs.moon_altaz.return_value = MagicMock()
-        _, stages = make_filter([plan], observer=obs).run_full_chain_with_trace({})
+        # M31 is at ~30° altitude at WIS at 03:00 UTC on 2026-04-27, safely above the
+        # min_observable_altitude floor so the airmass filter does not drop it first.
+        _, stages = make_filter(
+            [plan], observer=obs, now=datetime(2026, 4, 27, 3, 0, 0, tzinfo=UTC)
+        ).run_full_chain_with_trace({})
         moon_stage = next(stage for stage in stages if stage.stage == "moon_phase")
         assert len(moon_stage.dropped) == 1
         rationale = moon_stage.dropped[0].rationales[0]

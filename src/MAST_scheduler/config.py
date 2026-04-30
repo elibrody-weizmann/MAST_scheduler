@@ -17,6 +17,9 @@ class SchedulerConfig(BaseModel):
     spectrograph_switch_time: float = 120.0
     grating_stage_move_time: float = 30.0
     no_batch_advance_seconds: float = 900.0  # clock skip when no batch is emitted
+    # Reject targets below this altitude when no explicit airmass constraint is set.
+    # Checked at start, mid-point, and end of the planned observation window.
+    min_observable_altitude_deg: float = 10.0
 
     # Unit-side acquisition + guiding estimate inputs (seconds).
     #

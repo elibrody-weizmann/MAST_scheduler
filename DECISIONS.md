@@ -1,5 +1,13 @@
 # Decisions
 
+## [2026-04-30] Observation-window validation for time-varying filter constraints
+
+**Why:** `_evaluate_airmass` and `_evaluate_moon_separation` previously checked constraints at a single point in time (`now`). In the prediction simulation `now` is the end of the previous batch, but the actual observation starts at `now + setup_overhead`. A target barely above the minimum altitude at `now` may have set by `predicted_start`; a plan valid at observation start may violate airmass or moon-separation constraints before it finishes. Such plans were admitted silently and would fail during execution.
+
+**What:** Both evaluators now loop over three checkpoints — start (`now`), mid-point (`now + duration/2`), and end (`now + duration`) — where `duration = requested_exposure_duration × requested_number_of_exposures`. Two private helpers support this: `_plan_observation_seconds(plan)` (returns 0.0 if fields are absent, collapsing to start-only) and `_observation_checkpoints(start, duration_seconds)` (returns the `(label, Time, offset_secs)` triples). All three rejection `TraceRationale` codes (`target_below_horizon`, `target_below_min_altitude`, `airmass_exceeded`, `moon_separation_too_small`) now include `check_offset_seconds` and `check_label` in their `values` so operators can read "airmass exceeded at end of observation window (T+1800 s)". The `min_observable_altitude_deg` config field is now checked at all three checkpoints, making it strictly more conservative.
+
+**Implications:** Plans near their setting altitude are rejected earlier and more correctly. The three-checkpoint approach is an approximation; it catches smooth threshold crossings but may pass a plan that briefly dips below a threshold between mid-point and end. Checkpoint density can be increased later if needed. Rationale codes are stable; `check_offset_seconds` and `check_label` are additive and do not break consumers that parse only `code`.
+
 ## [2026-04-30] Sky plot endpoint delivers images via separate fetch, not embedded in batch JSON
 
 **Why:** Sky plot PNG generation is compute-heavy (matplotlib rendering) and adds ~7 KB

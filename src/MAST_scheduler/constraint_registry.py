@@ -38,11 +38,24 @@ def _make_sky_plot_b64(
     moon_alt: float | None = None,
     moon_az: float | None = None,
     moon_illum: float | None = None,
+    selected: bool = True,
 ) -> str | None:
+    """Generate a base64-encoded sky plot PNG for constraint scenario illustrations.
+
+    When selected=True (default) all targets are rendered as scheduled stars so they
+    stand out clearly in the illustration.
+    """
     try:
-        targets_with_id = [(name, ra, dec, None) for name, ra, dec in targets]
+        targets_with_id = [(name, ra, dec, name if selected else None) for name, ra, dec in targets]
+        selected_ids = {name for name, *_ in targets} if selected else None
         png = generate_sky_plot(
-            targets_with_id, _NS_SITE, _NIGHT_TIME, moon_alt, moon_az, moon_illum
+            targets_with_id,
+            _NS_SITE,
+            _NIGHT_TIME,
+            moon_alt,
+            moon_az,
+            moon_illum,
+            selected_plan_ids=selected_ids,
         )
         return base64.b64encode(png).decode("ascii")
     except Exception:
@@ -210,6 +223,23 @@ CONSTRAINT_REGISTRY: list[ConstraintSpec] = [
                 # Illustrative: target near zenith from NS at reference time
                 sky_plot_b64=_make_sky_plot_b64(_TARGET_HIGH),
             ),
+            ScenarioSpec(
+                name="passes_at_start_fails_at_end_rejected",
+                description=(
+                    "Target passes the altitude check at observation start but drops below"
+                    " the minimum observable altitude by the end of the observation window."
+                    " Plan is rejected with check_offset_seconds in the rationale values."
+                ),
+                expected="fail",
+            ),
+            ScenarioSpec(
+                name="no_duration_single_checkpoint_only",
+                description=(
+                    "A plan with no exposure duration falls back to a single start-time check;"
+                    " existing single-point behaviour is preserved."
+                ),
+                expected="pass",
+            ),
         ],
     ),
     ConstraintSpec(
@@ -317,6 +347,20 @@ CONSTRAINT_REGISTRY: list[ConstraintSpec] = [
                     " computed moon position when both are provided."
                 ),
                 expected="pass",
+            ),
+            ScenarioSpec(
+                name="passes_at_start_fails_at_end_rejected",
+                description=(
+                    "Moon separation is above minimum at observation start but the moon"
+                    " closes below the threshold by the end of the observation window."
+                    " Plan is rejected with check_offset_seconds in the rationale values."
+                ),
+                expected="fail",
+                # Target ~50° from the moon at observation start (just above the 45° min);
+                # the moon closes in during the observation window and ends below threshold.
+                sky_plot_b64=_make_sky_plot_b64(
+                    _TARGET_HIGH, moon_alt=30.0, moon_az=155.0, moon_illum=55.0
+                ),
             ),
         ],
     ),

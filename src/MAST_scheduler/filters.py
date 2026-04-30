@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import astropy.units as u
 from astroplan import Observer
 from astropy.coordinates import AltAz, EarthLocation, SkyCoord
-from astropy.time import Time
+from astropy.time import Time, TimeDelta
 from common.models.constraints import WhenToRepeat
 from common.models.plans import Plan
 
@@ -259,33 +259,68 @@ class PlanFilter:
         return True, []
 
     def _evaluate_airmass(self, plan: Plan) -> tuple[bool, list[TraceRationale]]:
-        altaz_frame = AltAz(obstime=self._astropy_time, location=self._site)
-        coord = _plan_skycoord(plan)
-        alt = coord.transform_to(altaz_frame).alt.deg
-        if alt <= 0:
-            return False, [
-                TraceRationale(
-                    code="target_below_horizon",
-                    message="Target is below horizon",
-                    values={"altitude_deg": float(alt)},
-                )
-            ]
-        if (
-            plan.constraints is None
-            or plan.constraints.airmass is None
-            or plan.constraints.airmass.max is None
-        ):
-            return True, []
-        airmass = 1.0 / math.sin(math.radians(alt))
-        max_airmass = float(plan.constraints.airmass.max)
-        if airmass > max_airmass:
-            return False, [
-                TraceRationale(
-                    code="airmass_exceeded",
-                    message="Airmass exceeds plan limit",
-                    values={"airmass": float(airmass), "max_airmass": max_airmass},
-                )
-            ]
+        duration = _plan_observation_seconds(plan)
+        checkpoints = _observation_checkpoints(self._astropy_time, duration)
+        min_alt = self._config.min_observable_altitude_deg
+
+        for label, obs_time, offset_secs in checkpoints:
+            altaz_frame = AltAz(obstime=obs_time, location=self._site)
+            coord = _plan_skycoord(plan)
+            alt = coord.transform_to(altaz_frame).alt.deg
+
+            if alt <= 0:
+                return False, [
+                    TraceRationale(
+                        code="target_below_horizon",
+                        message=f"Target is below horizon at {label}",
+                        values={
+                            "altitude_deg": float(alt),
+                            "check_offset_seconds": float(offset_secs),
+                            "check_label": label,
+                        },
+                    )
+                ]
+
+            if (
+                plan.constraints is None
+                or plan.constraints.airmass is None
+                or plan.constraints.airmass.max is None
+            ):
+                if alt < min_alt:
+                    return False, [
+                        TraceRationale(
+                            code="target_below_min_altitude",
+                            message=(
+                                f"Target altitude {alt:.1f}° is below minimum"
+                                f" observable altitude {min_alt:.1f}° at {label}"
+                            ),
+                            values={
+                                "altitude_deg": float(alt),
+                                "min_altitude_deg": float(min_alt),
+                                "check_offset_seconds": float(offset_secs),
+                                "check_label": label,
+                            },
+                        )
+                    ]
+                continue  # this checkpoint passes; proceed to next
+
+            airmass = 1.0 / math.sin(math.radians(alt))
+            max_airmass = float(plan.constraints.airmass.max)
+            if airmass > max_airmass:
+                return False, [
+                    TraceRationale(
+                        code="airmass_exceeded",
+                        message=f"Airmass exceeds plan limit at {label}",
+                        values={
+                            "airmass": float(airmass),
+                            "max_airmass": max_airmass,
+                            "altitude_deg": float(alt),
+                            "check_offset_seconds": float(offset_secs),
+                            "check_label": label,
+                        },
+                    )
+                ]
+
         return True, []
 
     def _evaluate_moon_phase(self, plan: Plan) -> tuple[bool, list[TraceRationale]]:
@@ -318,28 +353,47 @@ class PlanFilter:
             or plan.constraints.moon.min_distance is None
         ):
             return True, []
-        env = self._environment
-        if env is not None and env.moon_alt_deg is not None and env.moon_az_deg is not None:
-            altaz_frame = AltAz(obstime=self._astropy_time, location=self._site)
-            moon_skycoord = SkyCoord(
-                alt=env.moon_alt_deg * u.deg,
-                az=env.moon_az_deg * u.deg,
-                frame=altaz_frame,
-            )
-        else:
-            moon_coord = self._observer.moon_altaz(self._astropy_time)
-            moon_skycoord = SkyCoord(alt=moon_coord.alt, az=moon_coord.az, frame=moon_coord.frame)
-        target_coord = _plan_skycoord(plan)
-        separation_deg = float(target_coord.separation(moon_skycoord).deg)
+
+        duration = _plan_observation_seconds(plan)
+        checkpoints = _observation_checkpoints(self._astropy_time, duration)
         min_distance = float(plan.constraints.moon.min_distance)
-        if separation_deg < min_distance:
-            return False, [
-                TraceRationale(
-                    code="moon_separation_too_small",
-                    message="Moon separation is below plan minimum",
-                    values={"separation_deg": separation_deg, "min_distance_deg": min_distance},
+        env = self._environment
+        env_moon_fixed = (
+            env is not None and env.moon_alt_deg is not None and env.moon_az_deg is not None
+        )
+
+        for label, obs_time, offset_secs in checkpoints:
+            if env_moon_fixed:
+                # Sensor provides a snapshot position; use original frame time for all checkpoints.
+                altaz_frame = AltAz(obstime=self._astropy_time, location=self._site)
+                moon_skycoord = SkyCoord(
+                    alt=env.moon_alt_deg * u.deg,
+                    az=env.moon_az_deg * u.deg,
+                    frame=altaz_frame,
                 )
-            ]
+            else:
+                moon_coord = self._observer.moon_altaz(obs_time)
+                moon_skycoord = SkyCoord(
+                    alt=moon_coord.alt, az=moon_coord.az, frame=moon_coord.frame
+                )
+
+            target_coord = _plan_skycoord(plan)
+            separation_deg = float(target_coord.separation(moon_skycoord).deg)
+
+            if separation_deg < min_distance:
+                return False, [
+                    TraceRationale(
+                        code="moon_separation_too_small",
+                        message=f"Moon separation is below plan minimum at {label}",
+                        values={
+                            "separation_deg": separation_deg,
+                            "min_distance_deg": min_distance,
+                            "check_offset_seconds": float(offset_secs),
+                            "check_label": label,
+                        },
+                    )
+                ]
+
         return True, []
 
     def _evaluate_quorum(self, plan: Plan) -> tuple[bool, list[TraceRationale]]:
@@ -392,6 +446,34 @@ def _plan_skycoord(plan: Plan) -> SkyCoord:
         dec=float(plan.target.dec_degrees) * u.deg,
         frame="icrs",
     )
+
+
+def _plan_observation_seconds(plan: Plan) -> float:
+    """Return total planned observation duration in seconds.
+
+    Returns 0.0 if duration fields are absent; callers treat that as start-only check.
+    """
+    try:
+        duration = float(plan.target.requested_exposure_duration or 0.0)
+        count = int(plan.target.requested_number_of_exposures or 1)
+    except (TypeError, AttributeError):
+        return 0.0
+    return duration * count
+
+
+def _observation_checkpoints(start: Time, duration_seconds: float) -> list[tuple[str, Time, float]]:
+    """Return (label, time, offset_seconds) triples for start, mid, and end checkpoints.
+
+    When duration_seconds <= 0 only the start checkpoint is returned.
+    """
+    if duration_seconds <= 0:
+        return [("start of observation", start, 0.0)]
+    mid = duration_seconds / 2.0
+    return [
+        ("start of observation", start, 0.0),
+        ("mid-point of observation", start + TimeDelta(mid * u.s), mid),
+        ("end of observation", start + TimeDelta(duration_seconds * u.s), duration_seconds),
+    ]
 
 
 def _plan_id(plan: Plan) -> str:

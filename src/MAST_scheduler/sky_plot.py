@@ -16,6 +16,7 @@ _BG = "#0f172a"
 _GRID = "#334155"
 _ACCENT = "#38bdf8"
 _SELECTED_COLOR = "#f472b6"
+_SELECTED_BELOW_COLOR = "#f97316"  # orange: scheduled but below horizon at plot time
 _MOON_COLOR = "#fbbf24"
 _BELOW_COLOR = "#475569"
 _TEXT = "#e5e7eb"
@@ -155,7 +156,10 @@ def generate_sky_plot(
         az = float(altaz.az.deg)
         is_selected = plan_id is not None and plan_id in selected
         r = _altaz_r(alt)
-        color = _SELECTED_COLOR if is_selected else (_ACCENT if alt >= 0 else _BELOW_COLOR)
+        if is_selected:
+            color = _SELECTED_COLOR if alt >= 0 else _SELECTED_BELOW_COLOR
+        else:
+            color = _ACCENT if alt >= 0 else _BELOW_COLOR
         resolved.append((name, math.radians(az), r, color, is_selected))
 
         if is_selected and end_frame is not None:
@@ -181,6 +185,9 @@ def generate_sky_plot(
             _plot_target(name, az_rad, r, color, is_selected, alpha=1.0)
 
     # Legend
+    has_selected_below = any(
+        is_sel and color == _SELECTED_BELOW_COLOR for _, _, _, color, is_sel in resolved
+    )
     legend_items = [
         (plt.scatter([], [], color=_SELECTED_COLOR, s=100, marker="*"), "Scheduled target"),
         (
@@ -198,6 +205,13 @@ def generate_sky_plot(
             "Moon",
         ),
     ]
+    if has_selected_below:
+        legend_items.append(
+            (
+                plt.scatter([], [], color=_SELECTED_BELOW_COLOR, s=100, marker="*"),
+                "Scheduled (below horizon at plot time)",
+            )
+        )
     if end_time is not None:
         legend_items.append(
             (
