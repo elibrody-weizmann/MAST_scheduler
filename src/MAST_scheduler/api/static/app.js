@@ -75,6 +75,8 @@ const state = {
   generatedSummary: null,
   // Context used to fetch sky plots for batch cards. Set before each run.
   skyPlotBase: null, // { plans: list<dict>, siteName: str, environment: obj|null }
+  // Map of site key -> { key, label, lat, lng, elevation, tz }
+  siteMap: new Map(),
 };
 
 // Shared lightbox for all sky plot thumbnails
@@ -344,7 +346,11 @@ function makeBatchCardRow(label, value) {
   const labelEl = document.createElement("span");
   labelEl.textContent = label;
   const valueEl = document.createElement("strong");
-  valueEl.textContent = value ?? "-";
+  if (value instanceof Node) {
+    valueEl.append(value);
+  } else {
+    valueEl.textContent = value ?? "-";
+  }
   row.append(labelEl, valueEl);
   return row;
 }
@@ -455,7 +461,38 @@ function renderBatchCard(batch, opts = {}) {
   rows.append(makeBatchCardRow("Units", (batch.allocated_units ?? []).join(", ") || "—"));
 
   // Plans
-  rows.append(makeBatchCardRow("Plans", (batch.plan_ids ?? []).join(", ") || "—"));
+  {
+    const planIds = batch.plan_ids ?? [];
+    const planIndex = opts.planIndex;
+    const siteInfo = opts.siteInfo;
+    const batchDate = batch.predicted_start ?? batch.batch_start ?? batch.start_time ?? null;
+    if (planIds.length === 0) {
+      rows.append(makeBatchCardRow("Plans", "—"));
+    } else {
+      const container = document.createElement("span");
+      container.className = "plan-links";
+      for (const id of planIds) {
+        const entry = document.createElement("span");
+        entry.className = "plan-link-entry";
+        const chip = document.createElement("code");
+        chip.className = "plan-id-chip";
+        chip.textContent = id;
+        entry.append(chip);
+        const meta = planIndex?.get(id);
+        if (meta?.raHours != null && meta?.decDegrees != null && siteInfo && batchDate) {
+          const a = document.createElement("a");
+          a.href = buildAirmassUrl(meta, siteInfo, batchDate);
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          a.className = "airmass-link";
+          a.textContent = "airmass ↗";
+          entry.append(a);
+        }
+        container.append(entry);
+      }
+      rows.append(makeBatchCardRow("Plans", container));
+    }
+  }
 
   // ToO count
   if (containsToo) {
@@ -528,6 +565,43 @@ function formatMinutesSeconds(seconds) {
   return `${minutes}m ${remainingSeconds}s`;
 }
 
+function _parseSexagesimal(str) {
+  // Parses "HH:MM:SS.ss", "±DD:MM:SS.s", or a plain decimal string/number.
+  if (typeof str === "number") return str;
+  const s = String(str).trim();
+  const neg = s.startsWith("-");
+  const parts = s.replace(/^[+-]/, "").split(":");
+  if (parts.length === 1) return parseFloat(s);
+  const [d, m, sec] = parts.map(parseFloat);
+  const val = d + m / 60 + (sec ?? 0) / 3600;
+  return neg ? -val : val;
+}
+
+function raHoursToDecDeg(ra) {
+  return _parseSexagesimal(ra) * 15;
+}
+
+function buildAirmassUrl(meta, siteInfo, isoDateStr) {
+  const ra = raHoursToDecDeg(meta.raHours);
+  const dec = _parseSexagesimal(meta.decDegrees);
+  const date = (isoDateStr ?? "").slice(0, 10);
+  const elev = Math.round(siteInfo.elevation ?? 0);
+  const tz = (siteInfo.tz ?? "UTC").replace(/\//g, "-");
+  const encode = (v) => encodeURIComponent(String(v));
+  return (
+    `https://airmass.org/chart` +
+    `/obsid:${encode(siteInfo.label)}` +
+    `/el:${elev}` +
+    `/tz:${tz}` +
+    `/lat:${siteInfo.lat}` +
+    `/lng:${siteInfo.lng}` +
+    `/date:${date}` +
+    `/object:${encode(meta.targetName ?? "")}` +
+    `/ra:${ra.toFixed(6)}` +
+    `/dec:${dec.toFixed(6)}`
+  );
+}
+
 function buildPlanIndex(plans) {
   const index = new Map();
   for (const p of plans ?? []) {
@@ -535,7 +609,9 @@ function buildPlanIndex(plans) {
     if (!id) continue;
     const instrument = p.spec_assignment?.instrument ?? p.instrument ?? null;
     const targetName = p.target?.name ?? p.target_name ?? null;
-    index.set(id, { instrument, targetName });
+    const raHours = p.target?.ra_hours ?? null;
+    const decDegrees = p.target?.dec_degrees ?? null;
+    index.set(id, { instrument, targetName, raHours, decDegrees });
   }
   return index;
 }
@@ -631,7 +707,12 @@ function renderImmediate(data) {
     data.simulated ? "Simulated" : containsToo ? "ToO batch" : "Ready",
     pillStatus,
   );
-  const batchCard = renderBatchCard(batch, { feasibleCount: data.feasible_plan_count });
+  const siteInfo = state.siteMap.get(elements.siteName.value) ?? null;
+  const batchCard = renderBatchCard(batch, {
+    feasibleCount: data.feasible_plan_count,
+    planIndex,
+    siteInfo,
+  });
   const summaryChildren = [batchCard];
   if (rejectedSection) summaryChildren.push(rejectedSection);
   elements.immediateSummary.className = "";
@@ -663,8 +744,10 @@ function renderPrediction(data) {
     ["Predicted batches", batches.length],
   ]);
 
+  const predPlanIndex = buildPlanIndex(state.generatedPlans);
+  const predSiteInfo = state.siteMap.get(elements.siteName.value) ?? null;
   for (const batch of batches.slice(0, PREDICTION_BATCH_LIMIT)) {
-    const card = renderBatchCard(batch);
+    const card = renderBatchCard(batch, { planIndex: predPlanIndex, siteInfo: predSiteInfo });
     elements.predictionList.append(card);
     if (state.skyPlotBase) {
       const { plans, siteName, environment } = state.skyPlotBase;
@@ -1443,7 +1526,9 @@ fetch(API_PATHS.sites)
   .then((r) => r.json())
   .then((sites) => {
     const sel = elements.siteName;
-    sites.forEach(({ key, label }) => {
+    sites.forEach((site) => {
+      const { key, label } = site;
+      state.siteMap.set(key, site);
       const opt = document.createElement("option");
       opt.value = key;
       opt.textContent = `${key} - ${label}`;

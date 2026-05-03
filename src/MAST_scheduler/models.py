@@ -74,6 +74,7 @@ class ImmediateBatch(BaseModel):
     lamp_on: bool | None = None
     calibration_filter: str | None = None
     plan_ids: list[str] = Field(default_factory=list)
+    start_time: datetime | None = None
     predicted_duration_seconds: float | None = None
     setup_overhead_seconds: float = 0.0
     setup_breakdown: SetupBreakdown = Field(default_factory=SetupBreakdown)
@@ -226,4 +227,9 @@ KNOWN_SITES: dict[str, tuple[float, float, float]] = {
 KNOWN_SITE_LABELS: dict[str, str] = {
     "wis": "Weizmann Institute of Science",
     "ns": "Neot Smadar",
+}
+
+KNOWN_SITE_TIMEZONES: dict[str, str] = {
+    "wis": "Asia/Jerusalem",
+    "ns": "Asia/Jerusalem",
 }

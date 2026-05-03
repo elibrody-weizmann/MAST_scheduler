@@ -93,6 +93,7 @@ The FastAPI app serves a dependency-free web interface at `/`. It lets operators
 - Inspect stage-by-stage trace details with grouped keep/drop rationales, drill-down chips for affected plans, and highlighted exceeded constraints (actual vs limit) for supported rationale codes
 - View per-iteration batch duration (setup + exposure + teardown) in the trace timeline; hover over the Batch duration chip to see per-component breakdowns in seconds
 - Copy JSON from all raw JSON panels, including the generated plans list
+- Click **airmass ↗** next to each plan ULID in a batch card to open an airmass.org visibility chart pre-populated with site coordinates, timezone, observation date, target name, and RA/Dec (available when using inline/generated plans)
 
 Plan paths entered in the UI must be readable by the FastAPI process. The UI does
 not upload plan files; it submits paths to the same API contract used by direct

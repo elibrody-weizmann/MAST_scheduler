@@ -1,5 +1,13 @@
 # Decisions
 
+## [2026-04-30] airmass.org links on batch plan cards
+
+**Why:** Operators scheduling observations benefit from a direct airmass visibility chart to verify target altitude throughout the night. The airmass.org service accepts all required parameters (site, elevation, timezone, target coords, date) in a structured path-segment URL, making link construction fully client-side with no new backend endpoints.
+
+**What:** Each plan entry in a batch card now renders a small "airmass ↗" link beside the plan ULID. The link is built in JavaScript from plan target coordinates (converted from sexagesimal to decimal degrees), the selected site's lat/lng/elevation/timezone (now returned by `GET /scheduler/sites`), and the batch predicted-start date. `KNOWN_SITE_TIMEZONES` was added to `models.py` alongside the existing `KNOWN_SITES` dict. Links open in a new tab.
+
+**Implications:** The `/scheduler/sites` response is extended with `lat`, `lng`, `elevation`, and `tz` fields. The frontend `state.siteMap` caches the full site details after page load. The link renders only when plan coordinates are available in `state.generatedPlans`; batches run without inline plans show plain ULIDs as before.
+
 ## [2026-04-30] Closest moon separation is passed as render input
 
 **Why:** Operators need the minimum target-moon separation over a full observation window,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import UTC
+from datetime import UTC, datetime
 
 import astropy.units as u
 from astropy.coordinates import AltAz, EarthLocation, get_body
@@ -16,6 +16,7 @@ from ..constraint_registry import CONSTRAINT_REGISTRY
 from ..mock_plans import generate_mock_plans
 from ..models import (
     KNOWN_SITE_LABELS,
+    KNOWN_SITE_TIMEZONES,
     KNOWN_SITES,
     MOCK_PRESETS,
     ConstraintSuitesResponse,
@@ -192,7 +193,9 @@ def _build_immediate_response(
     setup_overhead, setup_breakdown = _compute_setup_overhead(batch, scheduler.config)
     teardown_overhead, teardown_breakdown = _compute_teardown(batch, scheduler.config)
     serialized = _serialize_batch(batch)
+    start_time = trace.simulated_time if trace.simulated else datetime.now(UTC)
     serialized.update(
+        start_time=start_time,
         predicted_duration_seconds=float(batch.predicted_duration or 0.0),
         setup_overhead_seconds=float(setup_overhead),
         setup_breakdown=setup_breakdown,
@@ -328,7 +331,17 @@ def predict_inline(req: InlinePredictRequest, request: Request) -> PredictRespon
 
 @router.get("/sites")
 def get_sites() -> list[dict]:
-    return [{"key": k, "label": KNOWN_SITE_LABELS[k]} for k in KNOWN_SITES]
+    return [
+        {
+            "key": k,
+            "label": KNOWN_SITE_LABELS[k],
+            "lng": KNOWN_SITES[k][0],
+            "lat": KNOWN_SITES[k][1],
+            "elevation": KNOWN_SITES[k][2],
+            "tz": KNOWN_SITE_TIMEZONES[k],
+        }
+        for k in KNOWN_SITES
+    ]
 
 
 @router.get("/mock-plans/presets")
