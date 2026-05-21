@@ -104,6 +104,14 @@ inline API endpoints, so large mock sets do not require writing plan files.
 
 ## API
 
+### `GET /build-report`
+
+Returns a uniform cross-module build / version report (same schema as every
+other MAST service): per-repo branch, HEAD SHA, `git describe`, dirty flag,
+submodule pin-vs-checkout, plus the loaded MAST_common version and path. See
+`MAST_common/README.md` for the schema; intended for ops use to spot partial
+deployments.
+
 ### `POST /scheduler/immediate`
 
 Returns the next batch to run right now.
